@@ -1,0 +1,25 @@
+# Build artifacts
+build/
+bin/
+lib/
+*.o
+*.a
+*.so
+*.dylib
+*.exe
+
+# IDE/Editor
+.vscode/
+.idea/
+.DS_Store
+*.swp
+.cache/
+
+# Python
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Private Documentation
+OPERATIONAL_GUIDE.md
