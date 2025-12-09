@@ -8,7 +8,7 @@
 
 #include "OrderBook.hpp"
 
-class MatchingEngine {
+class Exchange {
  public:
   std::vector<Trade> submitOrder(const Order &order);
   void cancelOrder(OrderId orderId);
@@ -19,5 +19,5 @@ class MatchingEngine {
  private:
   std::unordered_map<std::string, std::unique_ptr<OrderBook>> orderBooks;
   std::unordered_map<OrderId, std::string> orderSymbolIndex;
-  mutable std::shared_mutex engineMutex_;
+  mutable std::shared_mutex exchangeMutex_;
 };

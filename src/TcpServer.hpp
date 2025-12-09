@@ -5,11 +5,11 @@
 #include <thread>
 #include <vector>
 
-#include "MatchingEngine.hpp"
+#include "Exchange.hpp"
 
 class TcpServer {
  public:
-  TcpServer(MatchingEngine &engine, int port);
+  TcpServer(Exchange &engine, int port);
   ~TcpServer();
 
   bool start();
@@ -22,7 +22,7 @@ class TcpServer {
   void removeClient(int clientSocket);
   void broadcastTrade(const std::string &symbol, double price, double quantity);
 
-  MatchingEngine &engine_;
+  Exchange &engine_;
   int port_;
   int serverSocket_;
   std::atomic<bool> running_;

@@ -1,5 +1,5 @@
 add_library(matching_engine
-  MatchingEngine.cpp
+  Exchange.cpp
   OrderBook.cpp
   Order.cpp
   TcpServer.cpp

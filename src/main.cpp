@@ -1,11 +1,11 @@
 #include <iostream>
 #include <thread>
 
-#include "MatchingEngine.hpp"
+#include "Exchange.hpp"
 #include "TcpServer.hpp"
 
 int main() {
-  MatchingEngine engine;
+  Exchange engine;
   TcpServer server(engine, 8080);
 
   std::cout << "Starting Order Matching Engine Server..." << std::endl;

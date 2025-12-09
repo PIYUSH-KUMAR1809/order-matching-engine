@@ -1,13 +1,13 @@
-#include "MatchingEngine.hpp"
+#include "Exchange.hpp"
 
 #include <iostream>
 #include <mutex>
 
-std::vector<Trade> MatchingEngine::submitOrder(const Order &order) {
+std::vector<Trade> Exchange::submitOrder(const Order &order) {
   OrderBook *book = nullptr;
 
   {
-    std::unique_lock lock(engineMutex_);
+    std::unique_lock lock(exchangeMutex_);
     orderSymbolIndex[order.id] = order.symbol;
     if (orderBooks.find(order.symbol) == orderBooks.end()) {
       orderBooks[order.symbol] = std::make_unique<OrderBook>();
@@ -18,11 +18,11 @@ std::vector<Trade> MatchingEngine::submitOrder(const Order &order) {
   return book->addOrder(order);
 }
 
-void MatchingEngine::cancelOrder(OrderId orderId) {
+void Exchange::cancelOrder(OrderId orderId) {
   OrderBook *book = nullptr;
 
   {
-    std::shared_lock lock(engineMutex_);
+    std::shared_lock lock(exchangeMutex_);
     if (orderSymbolIndex.find(orderId) == orderSymbolIndex.end()) {
       return;
     }
@@ -40,10 +40,10 @@ void MatchingEngine::cancelOrder(OrderId orderId) {
   }
 }
 
-void MatchingEngine::printOrderBook(const std::string &symbol) const {
+void Exchange::printOrderBook(const std::string &symbol) const {
   OrderBook *book = nullptr;
   {
-    std::shared_lock lock(engineMutex_);
+    std::shared_lock lock(exchangeMutex_);
     if (orderBooks.find(symbol) != orderBooks.end()) {
       book = orderBooks.at(symbol).get();
     }
@@ -57,16 +57,16 @@ void MatchingEngine::printOrderBook(const std::string &symbol) const {
   }
 }
 
-const OrderBook *MatchingEngine::getOrderBook(const std::string &symbol) const {
-  std::shared_lock lock(engineMutex_);
+const OrderBook *Exchange::getOrderBook(const std::string &symbol) const {
+  std::shared_lock lock(exchangeMutex_);
   if (orderBooks.find(symbol) != orderBooks.end()) {
     return orderBooks.at(symbol).get();
   }
   return nullptr;
 }
 
-void MatchingEngine::printAllOrderBooks() const {
-  std::shared_lock lock(engineMutex_);
+void Exchange::printAllOrderBooks() const {
+  std::shared_lock lock(exchangeMutex_);
   for (const auto &pair : orderBooks) {
     std::cout << "Symbol: " << pair.first << std::endl;
     pair.second->printBook();

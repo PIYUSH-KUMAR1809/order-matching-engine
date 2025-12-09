@@ -5,9 +5,9 @@
 #include <thread>
 #include <vector>
 
-#include "MatchingEngine.hpp"
+#include "Exchange.hpp"
 
-void benchmarkWorker(MatchingEngine &engine, int numOrders, int threadId) {
+void benchmarkWorker(Exchange &engine, int numOrders, int threadId) {
   std::mt19937 gen(threadId);
   std::uniform_real_distribution<> priceDist(100.0, 200.0);
   std::uniform_int_distribution<> qtyDist(1, 100);
@@ -27,7 +27,7 @@ void benchmarkWorker(MatchingEngine &engine, int numOrders, int threadId) {
 }
 
 int main() {
-  MatchingEngine engine;
+  Exchange engine;
   int numThreads = std::thread::hardware_concurrency();
   int ordersPerThread = 100000;
   int totalOrders = numThreads * ordersPerThread;

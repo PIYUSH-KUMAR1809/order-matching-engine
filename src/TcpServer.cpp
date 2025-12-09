@@ -11,7 +11,7 @@
 #include <mutex>
 #include <sstream>
 
-TcpServer::TcpServer(MatchingEngine &engine, int port)
+TcpServer::TcpServer(Exchange &engine, int port)
     : engine_(engine), port_(port), serverSocket_(-1), running_(false) {}
 
 TcpServer::~TcpServer() { stop(); }

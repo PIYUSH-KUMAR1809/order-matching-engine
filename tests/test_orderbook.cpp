@@ -1,8 +1,9 @@
 #include <gtest/gtest.h>
 
 #include <thread>
+#include <vector>
 
-#include "MatchingEngine.hpp"
+#include "Exchange.hpp"
 #include "OrderBook.hpp"
 
 class OrderBookTest : public ::testing::Test {
@@ -99,8 +100,8 @@ TEST_F(OrderBookTest, MarketOrderNoMatch) {
   ASSERT_TRUE(book.getBids().empty());  // IOC cancelled
 }
 
-TEST(MatchingEngineTest, MultiAssetIsolation) {
-  MatchingEngine engine;
+TEST(ExchangeTest, MultiAssetIsolation) {
+  Exchange engine;
 
   // Add order for AAPL
   engine.submitOrder(
@@ -123,8 +124,8 @@ TEST(MatchingEngineTest, MultiAssetIsolation) {
   ASSERT_EQ(trades[0].takerOrderId, 3);
 }
 
-TEST(MatchingEngineTest, ConcurrencyTest) {
-  MatchingEngine engine;
+TEST(ExchangeTest, ConcurrencyTest) {
+  Exchange engine;
   std::vector<std::thread> threads;
 
   auto tradeFunc = [&](std::string symbol, int startId) {
