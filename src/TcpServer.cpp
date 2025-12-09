@@ -16,11 +16,11 @@ TcpServer::TcpServer(MatchingEngine &engine, int port)
 
 TcpServer::~TcpServer() { stop(); }
 
-void TcpServer::start() {
+bool TcpServer::start() {
   serverSocket_ = socket(AF_INET, SOCK_STREAM, 0);
   if (serverSocket_ < 0) {
     std::cerr << "Error creating socket" << std::endl;
-    return;
+    return false;
   }
 
   sockaddr_in serverAddr;
@@ -31,17 +31,18 @@ void TcpServer::start() {
   if (bind(serverSocket_, (struct sockaddr *)&serverAddr, sizeof(serverAddr)) <
       0) {
     std::cerr << "Error binding socket" << std::endl;
-    return;
+    return false;
   }
 
   if (listen(serverSocket_, 10) < 0) {
     std::cerr << "Error listening" << std::endl;
-    return;
+    return false;
   }
 
   running_ = true;
   std::cout << "Server started on port " << port_ << std::endl;
-  acceptThread_ = std::thread(&TcpServer::acceptLoop, this);
+  acceptThread_ = std::jthread(&TcpServer::acceptLoop, this);
+  return true;
 }
 
 void TcpServer::stop() {
@@ -49,14 +50,6 @@ void TcpServer::stop() {
   if (serverSocket_ >= 0) {
     close(serverSocket_);
     serverSocket_ = -1;
-  }
-  if (acceptThread_.joinable()) {
-    acceptThread_.join();
-  }
-  for (auto &t : clientThreads_) {
-    if (t.joinable()) {
-      t.join();
-    }
   }
 }
 

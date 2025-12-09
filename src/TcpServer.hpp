@@ -12,7 +12,7 @@ class TcpServer {
   TcpServer(MatchingEngine &engine, int port);
   ~TcpServer();
 
-  void start();
+  bool start();
   void stop();
 
  private:
@@ -26,8 +26,8 @@ class TcpServer {
   int port_;
   int serverSocket_;
   std::atomic<bool> running_;
-  std::thread acceptThread_;
-  std::vector<std::thread> clientThreads_;
+  std::jthread acceptThread_;
+  std::vector<std::jthread> clientThreads_;
 
   std::mutex subscribersMutex_;
   std::unordered_map<std::string, std::vector<int>> subscribers_;

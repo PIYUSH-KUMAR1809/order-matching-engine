@@ -9,7 +9,10 @@ int main() {
   TcpServer server(engine, 8080);
 
   std::cout << "Starting Order Matching Engine Server..." << std::endl;
-  server.start();
+  if (!server.start()) {
+    std::cerr << "Failed to start server" << std::endl;
+    return 1;
+  }
 
   // Keep the main thread alive
   while (true) {
