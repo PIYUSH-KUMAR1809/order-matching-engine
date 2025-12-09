@@ -35,7 +35,7 @@ class OrderBook {
  private:
   struct OrderLocation {
     Price price;
-    OrderType type;
+    OrderSide side;
     std::list<Order>::iterator iterator;
   };
 

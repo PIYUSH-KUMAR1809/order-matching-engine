@@ -11,11 +11,11 @@ std::vector<Trade> OrderBook::addOrder(const Order &order) {
   }
 
   // Market Order Logic (IOC)
-  if (order.kind == OrderKind::Market) {
+  if (order.type == OrderType::Market) {
     std::vector<Trade> trades;
     Quantity remaining = order.quantity;
 
-    if (order.type == OrderType::Buy) {
+    if (order.side == OrderSide::Buy) {
       while (remaining > 0 && !asks.empty()) {
         auto bestAskIt = asks.begin();
         auto &askList = bestAskIt->second;
@@ -60,17 +60,16 @@ std::vector<Trade> OrderBook::addOrder(const Order &order) {
     return trades;
   }
 
-  // Limit Order Logic
-  if (order.type == OrderType::Buy) {
+  if (order.side == OrderSide::Buy) {
     bids[order.price].push_back(order);
     auto it = bids[order.price].end();
     --it;  // Iterator to the newly added order
-    orderIndex[order.id] = {order.price, order.type, it};
+    orderIndex[order.id] = {order.price, order.side, it};
   } else {
     asks[order.price].push_back(order);
     auto it = asks[order.price].end();
     --it;
-    orderIndex[order.id] = {order.price, order.type, it};
+    orderIndex[order.id] = {order.price, order.side, it};
   }
 
   return match();
@@ -84,7 +83,7 @@ void OrderBook::cancelOrder(OrderId orderId) {
   }
 
   const auto &location = it->second;
-  if (location.type == OrderType::Buy) {
+  if (location.side == OrderSide::Buy) {
     auto &list = bids[location.price];
     list.erase(location.iterator);
     if (list.empty()) {

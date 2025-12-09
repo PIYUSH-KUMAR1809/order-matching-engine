@@ -110,12 +110,17 @@ std::string TcpServer::processRequest(int clientSocket,
     double price;
     ss >> symbol >> quantity >> price;
 
-    OrderType type = (command == "BUY") ? OrderType::Buy : OrderType::Sell;
+    OrderSide side = (command == "BUY") ? OrderSide::Buy : OrderSide::Sell;
     // Simple ID generation for demo
     static std::atomic<OrderId> nextId{1};
     OrderId id = nextId++;
+    uint64_t clientOrderId = 0;
+    if (ss.rdbuf()->in_avail() > 0) {
+      ss >> clientOrderId;
+    }
 
-    Order order(id, symbol, type, OrderKind::Limit, price, quantity);
+    Order order(id, clientOrderId, symbol, side, OrderType::Limit, price,
+                quantity);
     auto trades = engine_.submitOrder(order);
 
     std::stringstream response;

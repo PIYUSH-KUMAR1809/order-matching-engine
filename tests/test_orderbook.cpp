@@ -11,23 +11,28 @@ class OrderBookTest : public ::testing::Test {
 };
 
 TEST_F(OrderBookTest, AddOrder) {
-  book.addOrder(Order(1, "TEST", OrderType::Sell, OrderKind::Limit, 100.0, 10));
+  book.addOrder(
+      Order(1, 0, "TEST", OrderSide::Sell, OrderType::Limit, 100.0, 10));
   auto &asks = book.getAsks();
   ASSERT_EQ(asks.size(), 1);
   ASSERT_EQ(asks.begin()->second.front().quantity, 10);
 }
 
 TEST_F(OrderBookTest, MatchFull) {
-  book.addOrder(Order(1, "TEST", OrderType::Sell, OrderKind::Limit, 100.0, 10));
-  book.addOrder(Order(2, "TEST", OrderType::Buy, OrderKind::Limit, 100.0, 10));
+  book.addOrder(
+      Order(1, 0, "TEST", OrderSide::Sell, OrderType::Limit, 100.0, 10));
+  book.addOrder(
+      Order(2, 0, "TEST", OrderSide::Buy, OrderType::Limit, 100.0, 10));
 
   ASSERT_TRUE(book.getAsks().empty());
   ASSERT_TRUE(book.getBids().empty());
 }
 
 TEST_F(OrderBookTest, MatchPartial) {
-  book.addOrder(Order(1, "TEST", OrderType::Sell, OrderKind::Limit, 100.0, 20));
-  book.addOrder(Order(2, "TEST", OrderType::Buy, OrderKind::Limit, 100.0, 10));
+  book.addOrder(
+      Order(1, 0, "TEST", OrderSide::Sell, OrderType::Limit, 100.0, 20));
+  book.addOrder(
+      Order(2, 0, "TEST", OrderSide::Buy, OrderType::Limit, 100.0, 10));
 
   auto &asks = book.getAsks();
   ASSERT_EQ(asks.size(), 1);
@@ -37,15 +42,18 @@ TEST_F(OrderBookTest, MatchPartial) {
 }
 
 TEST_F(OrderBookTest, NoMatch) {
-  book.addOrder(Order(1, "TEST", OrderType::Sell, OrderKind::Limit, 101.0, 10));
-  book.addOrder(Order(2, "TEST", OrderType::Buy, OrderKind::Limit, 100.0, 10));
+  book.addOrder(
+      Order(1, 0, "TEST", OrderSide::Sell, OrderType::Limit, 101.0, 10));
+  book.addOrder(
+      Order(2, 0, "TEST", OrderSide::Buy, OrderType::Limit, 100.0, 10));
 
   ASSERT_EQ(book.getAsks().size(), 1);
   ASSERT_EQ(book.getBids().size(), 1);
 }
 
 TEST_F(OrderBookTest, CancelOrder) {
-  book.addOrder(Order(1, "TEST", OrderType::Sell, OrderKind::Limit, 100.0, 10));
+  book.addOrder(
+      Order(1, 0, "TEST", OrderSide::Sell, OrderType::Limit, 100.0, 10));
   ASSERT_EQ(book.getAsks().size(), 1);
 
   book.cancelOrder(1);
@@ -53,10 +61,11 @@ TEST_F(OrderBookTest, CancelOrder) {
 }
 
 TEST_F(OrderBookTest, MarketOrderFullFill) {
-  book.addOrder(Order(1, "TEST", OrderType::Sell, OrderKind::Limit, 100.0, 10));
+  book.addOrder(
+      Order(1, 0, "TEST", OrderSide::Sell, OrderType::Limit, 100.0, 10));
 
   auto trades = book.addOrder(
-      Order(2, "TEST", OrderType::Buy, OrderKind::Market, 0.0, 10));
+      Order(2, 0, "TEST", OrderSide::Buy, OrderType::Market, 0.0, 10));
 
   ASSERT_EQ(trades.size(), 1);
   ASSERT_EQ(trades[0].quantity, 10);
@@ -67,11 +76,12 @@ TEST_F(OrderBookTest, MarketOrderFullFill) {
 }
 
 TEST_F(OrderBookTest, MarketOrderPartialFill) {
-  book.addOrder(Order(1, "TEST", OrderType::Sell, OrderKind::Limit, 100.0, 10));
+  book.addOrder(
+      Order(1, 0, "TEST", OrderSide::Sell, OrderType::Limit, 100.0, 10));
 
   // Buy 20. 10 should match, 10 should be cancelled (IOC).
   auto trades = book.addOrder(
-      Order(2, "TEST", OrderType::Buy, OrderKind::Market, 0.0, 20));
+      Order(2, 0, "TEST", OrderSide::Buy, OrderType::Market, 0.0, 20));
 
   ASSERT_EQ(trades.size(), 1);
   ASSERT_EQ(trades[0].quantity, 10);
@@ -83,7 +93,7 @@ TEST_F(OrderBookTest, MarketOrderPartialFill) {
 TEST_F(OrderBookTest, MarketOrderNoMatch) {
   // Empty book
   auto trades = book.addOrder(
-      Order(1, "TEST", OrderType::Buy, OrderKind::Market, 0.0, 10));
+      Order(1, 0, "TEST", OrderSide::Buy, OrderType::Market, 0.0, 10));
 
   ASSERT_TRUE(trades.empty());
   ASSERT_TRUE(book.getBids().empty());  // IOC cancelled
@@ -94,18 +104,18 @@ TEST(MatchingEngineTest, MultiAssetIsolation) {
 
   // Add order for AAPL
   engine.submitOrder(
-      Order(1, "AAPL", OrderType::Sell, OrderKind::Limit, 150.0, 100));
+      Order(1, 0, "AAPL", OrderSide::Sell, OrderType::Limit, 150.0, 100));
 
   // Add order for GOOG (same price, different symbol)
   engine.submitOrder(
-      Order(2, "GOOG", OrderType::Buy, OrderKind::Limit, 150.0, 100));
+      Order(2, 0, "GOOG", OrderSide::Buy, OrderType::Limit, 150.0, 100));
 
   // Should NOT match because symbols are different
   // We can't easily inspect internal state without getters, but we can verify
   // by submitting a matching order for AAPL and ensuring it matches.
 
   auto trades = engine.submitOrder(
-      Order(3, "AAPL", OrderType::Buy, OrderKind::Limit, 150.0, 50));
+      Order(3, 0, "AAPL", OrderSide::Buy, OrderType::Limit, 150.0, 50));
 
   ASSERT_EQ(trades.size(), 1);
   ASSERT_EQ(trades[0].quantity, 50);
@@ -119,10 +129,10 @@ TEST(MatchingEngineTest, ConcurrencyTest) {
 
   auto tradeFunc = [&](std::string symbol, int startId) {
     for (int i = 0; i < 100; ++i) {
-      engine.submitOrder(Order(startId + i * 2, symbol, OrderType::Sell,
-                               OrderKind::Limit, 100.0, 10));
-      engine.submitOrder(Order(startId + i * 2 + 1, symbol, OrderType::Buy,
-                               OrderKind::Limit, 100.0, 10));
+      engine.submitOrder(Order(startId + i * 2, 0, symbol, OrderSide::Sell,
+                               OrderType::Limit, 100.0, 10));
+      engine.submitOrder(Order(startId + i * 2 + 1, 0, symbol, OrderSide::Buy,
+                               OrderType::Limit, 100.0, 10));
     }
   };
 

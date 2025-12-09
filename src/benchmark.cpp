@@ -14,7 +14,7 @@ void benchmarkWorker(MatchingEngine &engine, int numOrders, int threadId) {
   std::uniform_int_distribution<> typeDist(0, 1);  // 0: Buy, 1: Sell
 
   for (int i = 0; i < numOrders; ++i) {
-    OrderType type = (typeDist(gen) == 0) ? OrderType::Buy : OrderType::Sell;
+    OrderSide type = (typeDist(gen) == 0) ? OrderSide::Buy : OrderSide::Sell;
     double price = priceDist(gen);
     double qty = qtyDist(gen);
 
@@ -22,7 +22,7 @@ void benchmarkWorker(MatchingEngine &engine, int numOrders, int threadId) {
     OrderId id = (long)threadId * numOrders + i + 1;
 
     engine.submitOrder(
-        Order(id, "BTC-USD", type, OrderKind::Limit, price, qty));
+        Order(id, 0, "BTC-USD", type, OrderType::Limit, price, qty));
   }
 }
 
