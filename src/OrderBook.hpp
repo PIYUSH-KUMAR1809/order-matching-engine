@@ -32,6 +32,17 @@ class OrderBook {
     return asks;
   }
 
+  // Internal access for MatchingStrategy
+  std::map<Price, std::list<Order>, std::greater<Price>> &getBidsInternal() {
+    return bids;
+  }
+  std::map<Price, std::list<Order>, std::less<Price>> &getAsksInternal() {
+    return asks;
+  }
+
+  void addOrderInternal(const Order &order);
+  void removeOrderInternal(OrderId orderId);
+
  private:
   struct OrderLocation {
     Price price;
@@ -46,9 +57,6 @@ class OrderBook {
 
   // O(1) lookup for cancellation
   std::unordered_map<OrderId, OrderLocation> orderIndex;
-
-  // Internal matching logic
-  std::vector<Trade> match();
 
   mutable std::shared_mutex mutex_;
 };

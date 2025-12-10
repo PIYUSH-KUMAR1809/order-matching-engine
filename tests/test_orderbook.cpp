@@ -6,98 +6,112 @@
 #include "Exchange.hpp"
 #include "OrderBook.hpp"
 
-class OrderBookTest : public ::testing::Test {
+class ExchangeLogicTest : public ::testing::Test {
  protected:
-  OrderBook book;
+  Exchange engine;
 };
 
-TEST_F(OrderBookTest, AddOrder) {
-  book.addOrder(
+TEST_F(ExchangeLogicTest, AddOrder) {
+  engine.submitOrder(
       Order(1, 0, "TEST", OrderSide::Sell, OrderType::Limit, 100.0, 10));
-  auto &asks = book.getAsks();
+
+  const OrderBook* book = engine.getOrderBook("TEST");
+  ASSERT_NE(book, nullptr);
+  auto& asks = book->getAsks();
   ASSERT_EQ(asks.size(), 1);
   ASSERT_EQ(asks.begin()->second.front().quantity, 10);
 }
 
-TEST_F(OrderBookTest, MatchFull) {
-  book.addOrder(
+TEST_F(ExchangeLogicTest, MatchFull) {
+  engine.submitOrder(
       Order(1, 0, "TEST", OrderSide::Sell, OrderType::Limit, 100.0, 10));
-  book.addOrder(
+  engine.submitOrder(
       Order(2, 0, "TEST", OrderSide::Buy, OrderType::Limit, 100.0, 10));
 
-  ASSERT_TRUE(book.getAsks().empty());
-  ASSERT_TRUE(book.getBids().empty());
+  const OrderBook* book = engine.getOrderBook("TEST");
+  ASSERT_TRUE(book->getAsks().empty());
+  ASSERT_TRUE(book->getBids().empty());
 }
 
-TEST_F(OrderBookTest, MatchPartial) {
-  book.addOrder(
+TEST_F(ExchangeLogicTest, MatchPartial) {
+  engine.submitOrder(
       Order(1, 0, "TEST", OrderSide::Sell, OrderType::Limit, 100.0, 20));
-  book.addOrder(
+  engine.submitOrder(
       Order(2, 0, "TEST", OrderSide::Buy, OrderType::Limit, 100.0, 10));
 
-  auto &asks = book.getAsks();
+  const OrderBook* book = engine.getOrderBook("TEST");
+  auto& asks = book->getAsks();
   ASSERT_EQ(asks.size(), 1);
   ASSERT_EQ(asks.begin()->second.front().quantity,
             10);  // 20 - 10 = 10 remaining
-  ASSERT_TRUE(book.getBids().empty());
+  ASSERT_TRUE(book->getBids().empty());
 }
 
-TEST_F(OrderBookTest, NoMatch) {
-  book.addOrder(
+TEST_F(ExchangeLogicTest, NoMatch) {
+  engine.submitOrder(
       Order(1, 0, "TEST", OrderSide::Sell, OrderType::Limit, 101.0, 10));
-  book.addOrder(
+  engine.submitOrder(
       Order(2, 0, "TEST", OrderSide::Buy, OrderType::Limit, 100.0, 10));
 
-  ASSERT_EQ(book.getAsks().size(), 1);
-  ASSERT_EQ(book.getBids().size(), 1);
+  const OrderBook* book = engine.getOrderBook("TEST");
+  ASSERT_EQ(book->getAsks().size(), 1);
+  ASSERT_EQ(book->getBids().size(), 1);
 }
 
-TEST_F(OrderBookTest, CancelOrder) {
-  book.addOrder(
+TEST_F(ExchangeLogicTest, CancelOrder) {
+  engine.submitOrder(
       Order(1, 0, "TEST", OrderSide::Sell, OrderType::Limit, 100.0, 10));
-  ASSERT_EQ(book.getAsks().size(), 1);
+  const OrderBook* book = engine.getOrderBook("TEST");
+  ASSERT_EQ(book->getAsks().size(), 1);
 
-  book.cancelOrder(1);
-  ASSERT_TRUE(book.getAsks().empty());
+  engine.cancelOrder(1);
+  ASSERT_TRUE(book->getAsks().empty());
 }
 
-TEST_F(OrderBookTest, MarketOrderFullFill) {
-  book.addOrder(
+TEST_F(ExchangeLogicTest, MarketOrderFullFill) {
+  engine.submitOrder(
       Order(1, 0, "TEST", OrderSide::Sell, OrderType::Limit, 100.0, 10));
 
-  auto trades = book.addOrder(
+  auto trades = engine.submitOrder(
       Order(2, 0, "TEST", OrderSide::Buy, OrderType::Market, 0.0, 10));
 
   ASSERT_EQ(trades.size(), 1);
   ASSERT_EQ(trades[0].quantity, 10);
   ASSERT_EQ(trades[0].price, 100.0);
 
-  ASSERT_TRUE(book.getAsks().empty());
-  ASSERT_TRUE(book.getBids().empty());
+  const OrderBook* book = engine.getOrderBook("TEST");
+  ASSERT_TRUE(book->getAsks().empty());
+  ASSERT_TRUE(book->getBids().empty());
 }
 
-TEST_F(OrderBookTest, MarketOrderPartialFill) {
-  book.addOrder(
+TEST_F(ExchangeLogicTest, MarketOrderPartialFill) {
+  engine.submitOrder(
       Order(1, 0, "TEST", OrderSide::Sell, OrderType::Limit, 100.0, 10));
 
   // Buy 20. 10 should match, 10 should be cancelled (IOC).
-  auto trades = book.addOrder(
+  auto trades = engine.submitOrder(
       Order(2, 0, "TEST", OrderSide::Buy, OrderType::Market, 0.0, 20));
 
   ASSERT_EQ(trades.size(), 1);
   ASSERT_EQ(trades[0].quantity, 10);
 
-  ASSERT_TRUE(book.getAsks().empty());
-  ASSERT_TRUE(book.getBids().empty());  // Remainder cancelled
+  const OrderBook* book = engine.getOrderBook("TEST");
+  ASSERT_TRUE(book->getAsks().empty());
+  ASSERT_TRUE(book->getBids().empty());  // Remainder cancelled
 }
 
-TEST_F(OrderBookTest, MarketOrderNoMatch) {
+TEST_F(ExchangeLogicTest, MarketOrderNoMatch) {
   // Empty book
-  auto trades = book.addOrder(
+  auto trades = engine.submitOrder(
       Order(1, 0, "TEST", OrderSide::Buy, OrderType::Market, 0.0, 10));
 
   ASSERT_TRUE(trades.empty());
-  ASSERT_TRUE(book.getBids().empty());  // IOC cancelled
+
+  // Note: OrderBook might not be created if no order rests?
+  // submitOrder creates book if not found.
+  const OrderBook* book = engine.getOrderBook("TEST");
+  ASSERT_NE(book, nullptr);
+  ASSERT_TRUE(book->getBids().empty());  // IOC cancelled
 }
 
 TEST(ExchangeTest, MultiAssetIsolation) {
@@ -112,9 +126,6 @@ TEST(ExchangeTest, MultiAssetIsolation) {
       Order(2, 0, "GOOG", OrderSide::Buy, OrderType::Limit, 150.0, 100));
 
   // Should NOT match because symbols are different
-  // We can't easily inspect internal state without getters, but we can verify
-  // by submitting a matching order for AAPL and ensuring it matches.
-
   auto trades = engine.submitOrder(
       Order(3, 0, "AAPL", OrderSide::Buy, OrderType::Limit, 150.0, 50));
 
@@ -143,11 +154,7 @@ TEST(ExchangeTest, ConcurrencyTest) {
   threads.emplace_back(tradeFunc, "SYM1", 3000);  // Contention on SYM1
   threads.emplace_back(tradeFunc, "SYM3", 4000);
 
-  for (auto &t : threads) {
+  for (auto& t : threads) {
     t.join();
   }
-
-  // Verification is hard without inspecting state, but we ensure no crashes
-  // and basic consistency could be checked if we had getters.
-  // For now, survival is the test.
 }

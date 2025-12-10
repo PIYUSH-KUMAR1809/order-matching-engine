@@ -3,6 +3,12 @@
 #include <iostream>
 #include <mutex>
 
+Exchange::Exchange() {
+  matchingStrategy = std::make_unique<StandardMatchingStrategy>();
+}
+
+Exchange::~Exchange() = default;
+
 std::vector<Trade> Exchange::submitOrder(const Order &order) {
   OrderBook *book = nullptr;
 
@@ -13,9 +19,22 @@ std::vector<Trade> Exchange::submitOrder(const Order &order) {
       orderBooks[order.symbol] = std::make_unique<OrderBook>();
     }
     book = orderBooks[order.symbol].get();
-  }
 
-  return book->addOrder(order);
+    // Use the strategy to match/add
+    // Note: Locking is tricky. StandardMatchingStrategy expects to be able to
+    // mutate the book. Since we are in Exchange, we derived proper access. For
+    // Phase 2, we assume single-threaded access per order processing OR the
+    // book lock. If we removed book lock, we need to hold lock here?
+    // Exchange::exchangeMutex_ protects the map of books.
+    // We need a lock on the specific book.
+    // OrderBook::addOrderInternal doesn't lock anymore.
+    // So we need a lock on 'book'.
+    // TODO: Add per-book mutex in Exchange or OrderBook?
+    // User feedback: "shard-per-thread".
+    // For now, let's just make it work.
+
+    return matchingStrategy->match(*book, order);
+  }
 }
 
 void Exchange::cancelOrder(OrderId orderId) {

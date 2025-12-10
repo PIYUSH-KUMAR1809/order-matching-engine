@@ -1,69 +1,54 @@
 #include "OrderBook.hpp"
 
 #include <iostream>
-#include <mutex>
-#include <shared_mutex>
 
-std::vector<Trade> OrderBook::addOrder(const Order &order) {
-  std::unique_lock lock(mutex_);
+// Deprecated: logic moved to Strategy.
+// However, Exchange calls this? No, Exchange will call Strategy.
+// But current Exchange calls book->addOrder(order).
+// We should change Exchange to use Strategy->match(book, order).
+// So OrderBook::addOrder is useless or should strictly be "add to storage".
+// Let's repurpose addOrder to just add (for tests?) OR remove it.
+// Tests use book.addOrder(). Tests expect it to match.
+// Ideally, tests should use Exchange or Strategy.
+// For now, let's make addOrderInternal the semantic "add to storage".
+
+// Retrying replacement with correct content based on plan.
+// We will implement addOrderInternal and removeOrderInternal.
+// We will REMOVE addOrder's matching logic.
+// We will KEEP addOrder as a wrapper for addOrderInternal (for tests that just
+// want to add stuff?). Wait, tests expect matching. Break tests? Yes, tests
+// need update if we change semantics. Let's simplify: `OrderBook::addOrder` is
+// REMOVED from interface. Storage only. Tests should use `Exchange` or
+// `Strategy`. I will temporarily keep addOrder but make it Storage Only? No
+// that breaks tests. I will update OrderBook.cpp to have Storage methods.
+
+void OrderBook::addOrderInternal(const Order &order) {
+  // No lock here? Strategy handles locking?
+  // If we want "Dumb Container", it shouldn't have mutexes?
+  // Exchange has one big mutex.
+  // Feedback said "OrderBook should be standard container".
+  // Let's assume Exchange handles locking.
+  // Remove mutex_ from OrderBook?
+  // 'Exchange' has `exchangeMutex_`.
+  // 'OrderBook' has `mutex_`.
+  // If we move to Exchange, maybe efficient to have per-book mutex in Exchange.
+  // Let's keep `mutex_` for now but add public Lock/Unlock?
+  // Or just rely on Exchange's mutex for now (Global lock -> Symbol lock).
+  // The Exchange code locks `exchangeMutex_` (shared) allowing concurrent
+  // access to different books? Wait, `Exchange::submitOrder` locks
+  // `exchangeMutex_` (unique? no, we changed to per-book?) `Exchange.cpp` uses
+  // `unique_lock(exchangeMutex_)` for map lookup?
+
+  // Let's implement add/removeInternal.
+
   if (orderIndex.find(order.id) != orderIndex.end()) {
-    return {};  // Duplicate Order ID
-  }
-
-  // Market Order Logic (IOC)
-  if (order.type == OrderType::Market) {
-    std::vector<Trade> trades;
-    Quantity remaining = order.quantity;
-
-    if (order.side == OrderSide::Buy) {
-      while (remaining > 0 && !asks.empty()) {
-        auto bestAskIt = asks.begin();
-        auto &askList = bestAskIt->second;
-        Order &ask = askList.front();
-
-        Quantity quantity = std::min(remaining, ask.quantity);
-        trades.push_back({ask.price, quantity, ask.id, order.id});
-
-        ask.quantity -= quantity;
-        remaining -= quantity;
-
-        if (ask.quantity == 0) {
-          orderIndex.erase(ask.id);
-          askList.pop_front();
-          if (askList.empty()) {
-            asks.erase(bestAskIt);
-          }
-        }
-      }
-    } else {
-      // Market Sell
-      while (remaining > 0 && !bids.empty()) {
-        auto bestBidIt = bids.begin();
-        auto &bidList = bestBidIt->second;
-        Order &bid = bidList.front();
-
-        Quantity quantity = std::min(remaining, bid.quantity);
-        trades.push_back({bid.price, quantity, bid.id, order.id});
-
-        bid.quantity -= quantity;
-        remaining -= quantity;
-
-        if (bid.quantity == 0) {
-          orderIndex.erase(bid.id);
-          bidList.pop_front();
-          if (bidList.empty()) {
-            bids.erase(bestBidIt);
-          }
-        }
-      }
-    }
-    return trades;
+    return;
   }
 
   if (order.side == OrderSide::Buy) {
     bids[order.price].push_back(order);
     auto it = bids[order.price].end();
-    --it;  // Iterator to the newly added order
+    --it;
     orderIndex[order.id] = {order.price, order.side, it};
   } else {
     asks[order.price].push_back(order);
@@ -71,15 +56,12 @@ std::vector<Trade> OrderBook::addOrder(const Order &order) {
     --it;
     orderIndex[order.id] = {order.price, order.side, it};
   }
-
-  return match();
 }
 
-void OrderBook::cancelOrder(OrderId orderId) {
-  std::unique_lock lock(mutex_);
+void OrderBook::removeOrderInternal(OrderId orderId) {
   auto it = orderIndex.find(orderId);
   if (it == orderIndex.end()) {
-    return;  // Order not found
+    return;
   }
 
   const auto &location = it->second;
@@ -100,71 +82,19 @@ void OrderBook::cancelOrder(OrderId orderId) {
   orderIndex.erase(it);
 }
 
-std::vector<Trade> OrderBook::match() {
-  // Mutex is already locked by addOrder
-  std::vector<Trade> trades;
-
-  while (!bids.empty() && !asks.empty()) {
-    auto bestBidIt = bids.begin();
-    auto bestAskIt = asks.begin();
-
-    // Check for overlap
-    if (bestBidIt->first >= bestAskIt->first) {
-      auto &bidList = bestBidIt->second;
-      auto &askList = bestAskIt->second;
-
-      Order &bid = bidList.front();
-      Order &ask = askList.front();
-
-      Quantity quantity = std::min(bid.quantity, ask.quantity);
-
-      // Determine Maker/Taker and Trade Price
-      // The order that was in the book EARLIER is the Maker.
-      // The Maker determines the price.
-      Price tradePrice;
-      OrderId makerId, takerId;
-
-      if (bid.timestamp < ask.timestamp) {
-        // Bid is older (Maker)
-        tradePrice = bid.price;
-        makerId = bid.id;
-        takerId = ask.id;
-      } else {
-        // Ask is older (Maker)
-        tradePrice = ask.price;
-        makerId = ask.id;
-        takerId = bid.id;
-      }
-
-      trades.push_back({tradePrice, quantity, makerId, takerId});
-
-      bid.quantity -= quantity;
-      ask.quantity -= quantity;
-
-      if (bid.quantity == 0) {
-        orderIndex.erase(bid.id);
-        bidList.pop_front();
-        if (bidList.empty()) {
-          bids.erase(bestBidIt);
-        }
-      }
-
-      if (ask.quantity == 0) {
-        orderIndex.erase(ask.id);
-        askList.pop_front();
-        if (askList.empty()) {
-          asks.erase(bestAskIt);
-        }
-      }
-    } else {
-      break;  // No overlap
-    }
-  }
-  return trades;
+// Deprecated public methods
+std::vector<Trade> OrderBook::addOrder(const Order &order) {
+  // This method is now legacy or just for storage?
+  // If I keep it as storage, existing tests will fail matching.
+  // I should update tests.
+  addOrderInternal(order);
+  return {};
 }
 
+void OrderBook::cancelOrder(OrderId orderId) { removeOrderInternal(orderId); }
+
 void OrderBook::printBook() const {
-  std::shared_lock lock(mutex_);
+  // std::shared_lock lock(mutex_); // mutex removed or managed externally
   std::cout << "--- Order Book ---" << std::endl;
   std::cout << "ASKS:" << std::endl;
   for (auto it = asks.rbegin(); it != asks.rend(); ++it) {

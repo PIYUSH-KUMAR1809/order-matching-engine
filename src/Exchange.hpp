@@ -6,10 +6,12 @@
 #include <unordered_map>
 #include <vector>
 
-#include "OrderBook.hpp"
+#include "MatchingStrategy.hpp"
 
 class Exchange {
  public:
+  Exchange();
+  ~Exchange();
   std::vector<Trade> submitOrder(const Order &order);
   void cancelOrder(OrderId orderId);
   void printOrderBook(const std::string &symbol) const;
@@ -19,5 +21,6 @@ class Exchange {
  private:
   std::unordered_map<std::string, std::unique_ptr<OrderBook>> orderBooks;
   std::unordered_map<OrderId, std::string> orderSymbolIndex;
+  std::unique_ptr<MatchingStrategy> matchingStrategy;
   mutable std::shared_mutex exchangeMutex_;
 };
