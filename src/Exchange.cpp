@@ -12,50 +12,46 @@ Exchange::~Exchange() = default;
 std::vector<Trade> Exchange::submitOrder(const Order &order) {
   OrderBook *book = nullptr;
 
+  // 1. Locate (or create) the OrderBook
   {
-    std::unique_lock lock(exchangeMutex_);
-    orderSymbolIndex[order.id] = order.symbol;
+    std::shared_lock readLock(exchangeMutex_);
+    auto it = orderBooks.find(order.symbol);
+    if (it != orderBooks.end()) {
+      book = it->second.get();
+    }
+  }
+
+  if (!book) {
+    std::unique_lock writeLock(exchangeMutex_);
+    // Double check
     if (orderBooks.find(order.symbol) == orderBooks.end()) {
       orderBooks[order.symbol] = std::make_unique<OrderBook>();
     }
     book = orderBooks[order.symbol].get();
-
-    // Use the strategy to match/add
-    // Note: Locking is tricky. StandardMatchingStrategy expects to be able to
-    // mutate the book. Since we are in Exchange, we derived proper access. For
-    // Phase 2, we assume single-threaded access per order processing OR the
-    // book lock. If we removed book lock, we need to hold lock here?
-    // Exchange::exchangeMutex_ protects the map of books.
-    // We need a lock on the specific book.
-    // OrderBook::addOrderInternal doesn't lock anymore.
-    // So we need a lock on 'book'.
-    // TODO: Add per-book mutex in Exchange or OrderBook?
-    // User feedback: "shard-per-thread".
-    // For now, let's just make it work.
-
-    return matchingStrategy->match(*book, order);
   }
+
+  // 2. Process Order with Book Lock ONLY
+  book->lock();
+  std::vector<Trade> trades = matchingStrategy->match(*book, order);
+  book->unlock();
+
+  return trades;
 }
 
-void Exchange::cancelOrder(OrderId orderId) {
+void Exchange::cancelOrder(const std::string &symbol, OrderId orderId) {
   OrderBook *book = nullptr;
 
   {
     std::shared_lock lock(exchangeMutex_);
-    if (orderSymbolIndex.find(orderId) == orderSymbolIndex.end()) {
-      return;
-    }
-    std::string symbol = orderSymbolIndex.at(orderId);
     if (orderBooks.find(symbol) != orderBooks.end()) {
-      book = orderBooks[symbol].get();
+      book = orderBooks.at(symbol).get();
     }
   }
 
   if (book) {
+    book->lock();
     book->cancelOrder(orderId);
-    // Note: We don't remove from orderSymbolIndex to avoid race conditions
-    // with concurrent lookups. In a real system, we'd need a more complex
-    // cleanup strategy or a tombstone mechanism.
+    book->unlock();
   }
 }
 

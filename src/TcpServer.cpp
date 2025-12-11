@@ -128,9 +128,10 @@ std::string TcpServer::processRequest(int clientSocket,
     return response.str();
 
   } else if (command == "CANCEL") {
+    std::string symbol;
     OrderId id;
-    ss >> id;
-    engine_.cancelOrder(id);
+    ss >> symbol >> id;
+    engine_.cancelOrder(symbol, id);
     return "ORDER_CANCELLED\n";
 
   } else if (command == "PRINT") {

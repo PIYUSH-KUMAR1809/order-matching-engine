@@ -21,8 +21,12 @@ void benchmarkWorker(Exchange &engine, int numOrders, int threadId) {
     // Use threadId * numOrders + i as ID to ensure uniqueness
     OrderId id = (long)threadId * numOrders + i + 1;
 
+    // Distribute symbols to demonstrate sharding/concurrency
+    // Use threadId to assign a distinct symbol per thread to avoid contention
+    std::string symbol = "SYM-" + std::to_string(threadId % 10);
+
     engine.submitOrder(
-        Order(id, 0, "BTC-USD", type, OrderType::Limit, price, qty));
+        Order(id, 0, symbol, type, OrderType::Limit, price, qty));
   }
 }
 
