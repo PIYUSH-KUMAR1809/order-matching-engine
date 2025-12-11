@@ -8,61 +8,93 @@ std::vector<Trade> StandardMatchingStrategy::match(OrderBook& book,
   Order incoming = order;  // Make a copy to modify quantity
 
   if (incoming.side == OrderSide::Buy) {
-    // Attempt to match with Asks
-    auto& asks = book.getAsksInternal();  // We need mutable access
-    while (incoming.quantity > 0 && !asks.empty()) {
-      auto bestAskIt = asks.begin();
-      auto& askList = bestAskIt->second;
-      Order& ask = askList.front();
+    auto& asks = book.getAsksInternal();
+    auto askIt = asks.begin();
 
-      // Price Check
-      if (incoming.type == OrderType::Limit && incoming.price < ask.price) {
-        break;  // Best ask is too expensive
+    while (incoming.quantity > 0 && askIt != asks.end()) {
+      auto& askQueue = askIt->second;
+
+      // Process the queue at this price level
+      while (!askQueue.empty() && incoming.quantity > 0) {
+        Order& ask = askQueue.front();
+
+        // Lazy cleanup of inactive (Tombstone)
+        if (!ask.active) {
+          book.removeIndexInternal(ask.id);  // Clean index
+          askQueue.pop_front();
+          continue;
+        }
+
+        // Price Check (Optimization: check front only, if sort is correct)
+        if (incoming.type == OrderType::Limit && incoming.price < ask.price) {
+          goto end_match_buy;  // Best ask is too expensive
+        }
+
+        Quantity quantity = std::min(incoming.quantity, ask.quantity);
+        trades.push_back({ask.price, quantity, ask.id, incoming.id});
+
+        ask.quantity -= quantity;
+        incoming.quantity -= quantity;
+
+        if (ask.quantity == 0) {
+          book.removeIndexInternal(ask.id);
+          askQueue.pop_front();  // Fully matched
+        }
       }
 
-      Quantity quantity = std::min(incoming.quantity, ask.quantity);
-      trades.push_back({ask.price, quantity, ask.id, incoming.id});
-
-      ask.quantity -= quantity;
-      incoming.quantity -= quantity;
-
-      if (ask.quantity == 0) {
-        book.removeOrderInternal(ask.id);  // Helper to sync maps
+      // Cleanup empty price level
+      if (askQueue.empty()) {
+        askIt = asks.erase(askIt);
+      } else {
+        ++askIt;
       }
-
-      // If ask quantity was 0, removeOrderInternal handles list/map cleanup?
-      // We need to be careful about iterator invalidation here if
-      // removeOrderInternal invalidates bestAskIt. Standard way: check if list
-      // empty, then erase from map.
     }
+  end_match_buy:;
 
-    // If remaining and Limit, add to book
     if (incoming.quantity > 0 && incoming.type == OrderType::Limit) {
       book.addOrderInternal(incoming);
     }
+
   } else {
     // Sell Order - Match with Bids
     auto& bids = book.getBidsInternal();
-    while (incoming.quantity > 0 && !bids.empty()) {
-      auto bestBidIt = bids.begin();
-      // list is sorted by price descending
-      auto& bidList = bestBidIt->second;
-      Order& bid = bidList.front();
+    auto bidIt = bids.begin();
 
-      if (incoming.type == OrderType::Limit && incoming.price > bid.price) {
-        break;  // Best bid is too low
+    while (incoming.quantity > 0 && bidIt != bids.end()) {
+      auto& bidQueue = bidIt->second;
+
+      while (!bidQueue.empty() && incoming.quantity > 0) {
+        Order& bid = bidQueue.front();
+
+        if (!bid.active) {
+          book.removeIndexInternal(bid.id);
+          bidQueue.pop_front();
+          continue;
+        }
+
+        if (incoming.type == OrderType::Limit && incoming.price > bid.price) {
+          goto end_match_sell;
+        }
+
+        Quantity quantity = std::min(incoming.quantity, bid.quantity);
+        trades.push_back({bid.price, quantity, bid.id, incoming.id});
+
+        bid.quantity -= quantity;
+        incoming.quantity -= quantity;
+
+        if (bid.quantity == 0) {
+          book.removeIndexInternal(bid.id);
+          bidQueue.pop_front();
+        }
       }
 
-      Quantity quantity = std::min(incoming.quantity, bid.quantity);
-      trades.push_back({bid.price, quantity, bid.id, incoming.id});
-
-      bid.quantity -= quantity;
-      incoming.quantity -= quantity;
-
-      if (bid.quantity == 0) {
-        book.removeOrderInternal(bid.id);
+      if (bidQueue.empty()) {
+        bidIt = bids.erase(bidIt);
+      } else {
+        ++bidIt;
       }
     }
+  end_match_sell:;
 
     if (incoming.quantity > 0 && incoming.type == OrderType::Limit) {
       book.addOrderInternal(incoming);

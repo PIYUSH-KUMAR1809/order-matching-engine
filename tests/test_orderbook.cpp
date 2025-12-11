@@ -28,9 +28,20 @@ TEST_F(ExchangeLogicTest, MatchFull) {
   engine.submitOrder(
       Order(2, 0, "TEST", OrderSide::Buy, OrderType::Limit, 100.0, 10));
 
+  // Tombstone support: check active count
+  auto countActive = [](const auto& bookSide) {
+    int count = 0;
+    for (const auto& [price, orders] : bookSide) {
+      for (const auto& order : orders) {
+        if (order.active) count++;
+      }
+    }
+    return count;
+  };
+
   const OrderBook* book = engine.getOrderBook("TEST");
-  ASSERT_TRUE(book->getAsks().empty());
-  ASSERT_TRUE(book->getBids().empty());
+  ASSERT_EQ(countActive(book->getAsks()), 0);
+  ASSERT_EQ(countActive(book->getBids()), 0);
 }
 
 TEST_F(ExchangeLogicTest, MatchPartial) {
@@ -41,10 +52,27 @@ TEST_F(ExchangeLogicTest, MatchPartial) {
 
   const OrderBook* book = engine.getOrderBook("TEST");
   auto& asks = book->getAsks();
-  ASSERT_EQ(asks.size(), 1);
-  ASSERT_EQ(asks.begin()->second.front().quantity,
-            10);  // 20 - 10 = 10 remaining
-  ASSERT_TRUE(book->getBids().empty());
+
+  // Verify first order is still there partially
+  bool found = false;
+  for (const auto& order : asks.at(100.0)) {
+    if (order.id == 1 && order.active) {
+      ASSERT_EQ(order.quantity, 10);
+      found = true;
+    }
+  }
+  ASSERT_TRUE(found);
+
+  auto countActive = [](const auto& bookSide) {
+    int count = 0;
+    for (const auto& [price, orders] : bookSide) {
+      for (const auto& order : orders) {
+        if (order.active) count++;
+      }
+    }
+    return count;
+  };
+  ASSERT_EQ(countActive(book->getBids()), 0);
 }
 
 TEST_F(ExchangeLogicTest, NoMatch) {
@@ -54,18 +82,37 @@ TEST_F(ExchangeLogicTest, NoMatch) {
       Order(2, 0, "TEST", OrderSide::Buy, OrderType::Limit, 100.0, 10));
 
   const OrderBook* book = engine.getOrderBook("TEST");
-  ASSERT_EQ(book->getAsks().size(), 1);
-  ASSERT_EQ(book->getBids().size(), 1);
+  // Check counts
+  auto countActive = [](const auto& bookSide) {
+    int count = 0;
+    for (const auto& [price, orders] : bookSide) {
+      for (const auto& order : orders) {
+        if (order.active) count++;
+      }
+    }
+    return count;
+  };
+  ASSERT_EQ(countActive(book->getAsks()), 1);
+  ASSERT_EQ(countActive(book->getBids()), 1);
 }
 
 TEST_F(ExchangeLogicTest, CancelOrder) {
   engine.submitOrder(
       Order(1, 0, "TEST", OrderSide::Sell, OrderType::Limit, 100.0, 10));
   const OrderBook* book = engine.getOrderBook("TEST");
-  ASSERT_EQ(book->getAsks().size(), 1);
 
-  engine.cancelOrder(1);
-  ASSERT_TRUE(book->getAsks().empty());
+  engine.cancelOrder("TEST", 1);
+
+  auto countActive = [](const auto& bookSide) {
+    int count = 0;
+    for (const auto& [price, orders] : bookSide) {
+      for (const auto& order : orders) {
+        if (order.active) count++;
+      }
+    }
+    return count;
+  };
+  ASSERT_EQ(countActive(book->getAsks()), 0);
 }
 
 TEST_F(ExchangeLogicTest, MarketOrderFullFill) {
@@ -80,8 +127,17 @@ TEST_F(ExchangeLogicTest, MarketOrderFullFill) {
   ASSERT_EQ(trades[0].price, 100.0);
 
   const OrderBook* book = engine.getOrderBook("TEST");
-  ASSERT_TRUE(book->getAsks().empty());
-  ASSERT_TRUE(book->getBids().empty());
+  auto countActive = [](const auto& bookSide) {
+    int count = 0;
+    for (const auto& [price, orders] : bookSide) {
+      for (const auto& order : orders) {
+        if (order.active) count++;
+      }
+    }
+    return count;
+  };
+  ASSERT_EQ(countActive(book->getAsks()), 0);
+  ASSERT_EQ(countActive(book->getBids()), 0);
 }
 
 TEST_F(ExchangeLogicTest, MarketOrderPartialFill) {
@@ -96,8 +152,17 @@ TEST_F(ExchangeLogicTest, MarketOrderPartialFill) {
   ASSERT_EQ(trades[0].quantity, 10);
 
   const OrderBook* book = engine.getOrderBook("TEST");
-  ASSERT_TRUE(book->getAsks().empty());
-  ASSERT_TRUE(book->getBids().empty());  // Remainder cancelled
+  auto countActive = [](const auto& bookSide) {
+    int count = 0;
+    for (const auto& [price, orders] : bookSide) {
+      for (const auto& order : orders) {
+        if (order.active) count++;
+      }
+    }
+    return count;
+  };
+  ASSERT_EQ(countActive(book->getAsks()), 0);
+  ASSERT_EQ(countActive(book->getBids()), 0);
 }
 
 TEST_F(ExchangeLogicTest, MarketOrderNoMatch) {

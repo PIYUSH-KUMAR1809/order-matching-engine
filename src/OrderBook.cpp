@@ -47,14 +47,12 @@ void OrderBook::addOrderInternal(const Order &order) {
 
   if (order.side == OrderSide::Buy) {
     bids[order.price].push_back(order);
-    auto it = bids[order.price].end();
-    --it;
-    orderIndex[order.id] = {order.price, order.side, it};
+    Order *ptr = &bids[order.price].back();
+    orderIndex[order.id] = {order.price, order.side, ptr};
   } else {
     asks[order.price].push_back(order);
-    auto it = asks[order.price].end();
-    --it;
-    orderIndex[order.id] = {order.price, order.side, it};
+    Order *ptr = &asks[order.price].back();
+    orderIndex[order.id] = {order.price, order.side, ptr};
   }
 }
 
@@ -64,22 +62,22 @@ void OrderBook::removeOrderInternal(OrderId orderId) {
     return;
   }
 
+  // Just set Tombstone flag.
+  // We keep the index entry so we know it's already cancelled if asked again.
+  // But MatchingStrategy can remove it from index when popping.
   const auto &location = it->second;
-  if (location.side == OrderSide::Buy) {
-    auto &list = bids[location.price];
-    list.erase(location.iterator);
-    if (list.empty()) {
-      bids.erase(location.price);
-    }
-  } else {
-    auto &list = asks[location.price];
-    list.erase(location.iterator);
-    if (list.empty()) {
-      asks.erase(location.price);
-    }
+  if (location.orderPtr) {
+    location.orderPtr->active = false;
   }
 
+  // Note: We DO NOT remove from orderIndex here unless we want to allow re-use
+  // of ID? Standard logic: Cancelled order is dead. If we remove from
+  // orderIndex, repeated cancel calls return early (safer).
   orderIndex.erase(it);
+}
+
+void OrderBook::removeIndexInternal(OrderId orderId) {
+  orderIndex.erase(orderId);
 }
 
 // Deprecated public methods
@@ -99,15 +97,19 @@ void OrderBook::printBook() const {
   std::cout << "ASKS:" << std::endl;
   for (auto it = asks.rbegin(); it != asks.rend(); ++it) {
     for (const auto &order : it->second) {
-      std::cout << order.price << " x " << order.quantity
-                << " (ID: " << order.id << ")" << std::endl;
+      if (order.active) {
+        std::cout << order.price << " x " << order.quantity
+                  << " (ID: " << order.id << ")" << std::endl;
+      }
     }
   }
   std::cout << "BIDS:" << std::endl;
   for (const auto &pair : bids) {
     for (const auto &order : pair.second) {
-      std::cout << pair.first << " x " << order.quantity << " (ID: " << order.id
-                << ")" << std::endl;
+      if (order.active) {
+        std::cout << pair.first << " x " << order.quantity
+                  << " (ID: " << order.id << ")" << std::endl;
+      }
     }
   }
   std::cout << "------------------" << std::endl;
