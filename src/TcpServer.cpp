@@ -80,7 +80,7 @@ void TcpServer::handleClient(int clientSocket) {
     ssize_t bytesRead = read(clientSocket, buffer, sizeof(buffer) - 1);
 
     if (bytesRead <= 0) {
-      break;  // Client disconnected or error
+      break;
     }
 
     std::string request(buffer);
@@ -104,7 +104,7 @@ std::string TcpServer::processRequest(int clientSocket,
     ss >> symbol >> quantity >> price;
 
     OrderSide side = (command == "BUY") ? OrderSide::Buy : OrderSide::Sell;
-    // Simple ID generation for demo
+
     static std::atomic<OrderId> nextId{1};
     OrderId id = nextId++;
     uint64_t clientOrderId = 0;
@@ -135,9 +135,6 @@ std::string TcpServer::processRequest(int clientSocket,
     return "ORDER_CANCELLED\n";
 
   } else if (command == "PRINT") {
-    // This is a bit tricky because printOrderBook writes to stdout.
-    // For a real server, we'd want it to return a string.
-    // For now, let's just acknowledge.
     return "PRINT_REQUESTED_CHECK_SERVER_LOGS\n";
 
   } else if (command == "SUBSCRIBE") {
@@ -198,7 +195,6 @@ void TcpServer::broadcastTrade(const std::string &symbol, double price,
   std::string msg = ss.str();
 
   for (int clientSocket : subscribers_[symbol]) {
-    // In a real system, we should handle partial writes and errors here
     write(clientSocket, msg.c_str(), msg.length());
   }
 }

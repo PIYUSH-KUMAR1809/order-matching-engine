@@ -5,7 +5,7 @@
 std::vector<Trade> StandardMatchingStrategy::match(OrderBook& book,
                                                    const Order& order) {
   std::vector<Trade> trades;
-  Order incoming = order;  // Make a copy to modify quantity
+  Order incoming = order;
 
   if (incoming.side == OrderSide::Buy) {
     auto& asks = book.getAsksInternal();
@@ -14,20 +14,17 @@ std::vector<Trade> StandardMatchingStrategy::match(OrderBook& book,
     while (incoming.quantity > 0 && askIt != asks.end()) {
       auto& askQueue = askIt->second;
 
-      // Process the queue at this price level
       while (!askQueue.empty() && incoming.quantity > 0) {
         Order& ask = askQueue.front();
 
-        // Lazy cleanup of inactive (Tombstone)
         if (!ask.active) {
-          book.removeIndexInternal(ask.id);  // Clean index
+          book.removeIndexInternal(ask.id);
           askQueue.pop_front();
           continue;
         }
 
-        // Price Check (Optimization: check front only, if sort is correct)
         if (incoming.type == OrderType::Limit && incoming.price < ask.price) {
-          goto end_match_buy;  // Best ask is too expensive
+          goto end_match_buy;
         }
 
         Quantity quantity = std::min(incoming.quantity, ask.quantity);
@@ -38,11 +35,10 @@ std::vector<Trade> StandardMatchingStrategy::match(OrderBook& book,
 
         if (ask.quantity == 0) {
           book.removeIndexInternal(ask.id);
-          askQueue.pop_front();  // Fully matched
+          askQueue.pop_front();
         }
       }
 
-      // Cleanup empty price level
       if (askQueue.empty()) {
         askIt = asks.erase(askIt);
       } else {
@@ -56,7 +52,6 @@ std::vector<Trade> StandardMatchingStrategy::match(OrderBook& book,
     }
 
   } else {
-    // Sell Order - Match with Bids
     auto& bids = book.getBidsInternal();
     auto bidIt = bids.begin();
 

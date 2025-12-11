@@ -12,7 +12,6 @@ Exchange::~Exchange() = default;
 std::vector<Trade> Exchange::submitOrder(const Order &order) {
   OrderBook *book = nullptr;
 
-  // 1. Locate (or create) the OrderBook
   {
     std::shared_lock readLock(exchangeMutex_);
     auto it = orderBooks.find(order.symbol);
@@ -23,14 +22,13 @@ std::vector<Trade> Exchange::submitOrder(const Order &order) {
 
   if (!book) {
     std::unique_lock writeLock(exchangeMutex_);
-    // Double check
+
     if (orderBooks.find(order.symbol) == orderBooks.end()) {
       orderBooks[order.symbol] = std::make_unique<OrderBook>();
     }
     book = orderBooks[order.symbol].get();
   }
 
-  // 2. Process Order with Book Lock ONLY
   book->lock();
   std::vector<Trade> trades = matchingStrategy->match(*book, order);
   book->unlock();
