@@ -28,7 +28,6 @@ TEST_F(ExchangeLogicTest, MatchFull) {
   engine.submitOrder(
       Order(2, 0, "TEST", OrderSide::Buy, OrderType::Limit, 100.0, 10));
 
-  // Tombstone support: check active count
   auto countActive = [](const auto& bookSide) {
     int count = 0;
     for (const auto& [price, orders] : bookSide) {
@@ -53,7 +52,6 @@ TEST_F(ExchangeLogicTest, MatchPartial) {
   const OrderBook* book = engine.getOrderBook("TEST");
   auto& asks = book->getAsks();
 
-  // Verify first order is still there partially
   bool found = false;
   for (const auto& order : asks.at(100.0)) {
     if (order.id == 1 && order.active) {
@@ -82,7 +80,6 @@ TEST_F(ExchangeLogicTest, NoMatch) {
       Order(2, 0, "TEST", OrderSide::Buy, OrderType::Limit, 100.0, 10));
 
   const OrderBook* book = engine.getOrderBook("TEST");
-  // Check counts
   auto countActive = [](const auto& bookSide) {
     int count = 0;
     for (const auto& [price, orders] : bookSide) {
@@ -144,7 +141,6 @@ TEST_F(ExchangeLogicTest, MarketOrderPartialFill) {
   engine.submitOrder(
       Order(1, 0, "TEST", OrderSide::Sell, OrderType::Limit, 100.0, 10));
 
-  // Buy 20. 10 should match, 10 should be cancelled (IOC).
   auto trades = engine.submitOrder(
       Order(2, 0, "TEST", OrderSide::Buy, OrderType::Market, 0.0, 20));
 
@@ -166,31 +162,25 @@ TEST_F(ExchangeLogicTest, MarketOrderPartialFill) {
 }
 
 TEST_F(ExchangeLogicTest, MarketOrderNoMatch) {
-  // Empty book
   auto trades = engine.submitOrder(
       Order(1, 0, "TEST", OrderSide::Buy, OrderType::Market, 0.0, 10));
 
   ASSERT_TRUE(trades.empty());
 
-  // Note: OrderBook might not be created if no order rests?
-  // submitOrder creates book if not found.
   const OrderBook* book = engine.getOrderBook("TEST");
   ASSERT_NE(book, nullptr);
-  ASSERT_TRUE(book->getBids().empty());  // IOC cancelled
+  ASSERT_TRUE(book->getBids().empty());
 }
 
 TEST(ExchangeTest, MultiAssetIsolation) {
   Exchange engine;
 
-  // Add order for AAPL
   engine.submitOrder(
       Order(1, 0, "AAPL", OrderSide::Sell, OrderType::Limit, 150.0, 100));
 
-  // Add order for GOOG (same price, different symbol)
   engine.submitOrder(
       Order(2, 0, "GOOG", OrderSide::Buy, OrderType::Limit, 150.0, 100));
 
-  // Should NOT match because symbols are different
   auto trades = engine.submitOrder(
       Order(3, 0, "AAPL", OrderSide::Buy, OrderType::Limit, 150.0, 50));
 
@@ -213,10 +203,9 @@ TEST(ExchangeTest, ConcurrencyTest) {
     }
   };
 
-  // Launch 4 threads trading different symbols
   threads.emplace_back(tradeFunc, "SYM1", 1000);
   threads.emplace_back(tradeFunc, "SYM2", 2000);
-  threads.emplace_back(tradeFunc, "SYM1", 3000);  // Contention on SYM1
+  threads.emplace_back(tradeFunc, "SYM1", 3000);
   threads.emplace_back(tradeFunc, "SYM3", 4000);
 
   for (auto& t : threads) {

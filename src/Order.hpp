@@ -21,7 +21,7 @@ struct Order {
   std::string symbol;
   uint64_t clientOrderId;
   std::chrono::system_clock::time_point timestamp;
-  bool active = true;  // For Tombstone deletion
+  bool active = true;
 
   Order(OrderId id, uint64_t clientOrderId, const std::string &symbol,
         OrderSide side, OrderType type, Price price, Quantity quantity)

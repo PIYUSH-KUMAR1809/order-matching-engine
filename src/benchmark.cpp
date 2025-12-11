@@ -1,4 +1,3 @@
-
 #include <chrono>
 #include <iostream>
 #include <random>
@@ -11,18 +10,15 @@ void benchmarkWorker(Exchange &engine, int numOrders, int threadId) {
   std::mt19937 gen(threadId);
   std::uniform_real_distribution<> priceDist(100.0, 200.0);
   std::uniform_int_distribution<> qtyDist(1, 100);
-  std::uniform_int_distribution<> typeDist(0, 1);  // 0: Buy, 1: Sell
+  std::uniform_int_distribution<> typeDist(0, 1);
 
   for (int i = 0; i < numOrders; ++i) {
     OrderSide type = (typeDist(gen) == 0) ? OrderSide::Buy : OrderSide::Sell;
     double price = priceDist(gen);
     double qty = qtyDist(gen);
 
-    // Use threadId * numOrders + i as ID to ensure uniqueness
     OrderId id = (long)threadId * numOrders + i + 1;
 
-    // Distribute symbols to demonstrate sharding/concurrency
-    // Use threadId to assign a distinct symbol per thread to avoid contention
     std::string symbol = "SYM-" + std::to_string(threadId % 10);
 
     engine.submitOrder(

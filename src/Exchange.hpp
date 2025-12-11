@@ -20,8 +20,6 @@ class Exchange {
 
  private:
   std::unordered_map<std::string, std::unique_ptr<OrderBook>> orderBooks;
-  // std::unordered_map<OrderId, std::string> orderSymbolIndex; // Removed for
-  // sharding performance
   std::unique_ptr<MatchingStrategy> matchingStrategy;
   mutable std::shared_mutex exchangeMutex_;
 };

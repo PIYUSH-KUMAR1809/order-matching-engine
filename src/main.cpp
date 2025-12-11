@@ -14,7 +14,6 @@ int main() {
     return 1;
   }
 
-  // Keep the main thread alive
   while (true) {
     std::this_thread::sleep_for(std::chrono::seconds(1));
   }
