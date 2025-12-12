@@ -3,13 +3,13 @@
 #include <deque>
 #include <functional>
 #include <map>
-#include <shared_mutex>
 #include <unordered_map>
 #include <vector>
 
 #include "Order.hpp"
 
 struct Trade {
+  std::string symbol;
   Price price;
   Quantity quantity;
   OrderId makerOrderId;
@@ -20,9 +20,6 @@ class OrderBook {
  public:
   std::vector<Trade> addOrder(const Order &order);
   void cancelOrder(OrderId orderId);
-
-  void lock() const { mutex_.lock(); }
-  void unlock() const { mutex_.unlock(); }
 
   void printBook() const;
 
@@ -56,6 +53,4 @@ class OrderBook {
   std::map<Price, std::deque<Order>, std::less<Price>> asks;
 
   std::unordered_map<OrderId, OrderLocation> orderIndex;
-
-  mutable std::shared_mutex mutex_;
 };

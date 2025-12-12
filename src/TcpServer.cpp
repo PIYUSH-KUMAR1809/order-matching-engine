@@ -12,7 +12,19 @@
 #include <sstream>
 
 TcpServer::TcpServer(Exchange &engine, int port)
-    : engine_(engine), port_(port), serverSocket_(-1), running_(false) {}
+    : engine_(engine), port_(port), serverSocket_(-1), running_(false) {
+  // Register callback to broadcast trades whenever they happen
+  engine_.setTradeCallback([this](const std::vector<Trade> &trades) {
+    for (const auto &trade : trades) {
+      // Since this is called from worker thread, broadCastTrade uses a mutex so
+      // it's safe We use the symbol from the first trade if possible, or
+      // iterate? Broadcast trade to subscribes of that symbol
+      if (!trade.symbol.empty()) {
+        broadcastTrade(trade.symbol, trade.price, trade.quantity);
+      }
+    }
+  });
+}
 
 TcpServer::~TcpServer() { stop(); }
 
@@ -114,17 +126,12 @@ std::string TcpServer::processRequest(int clientSocket,
 
     Order order(id, clientOrderId, symbol, side, OrderType::Limit, price,
                 quantity);
-    auto trades = engine_.submitOrder(order);
+
+    engine_.submitOrder(order);
 
     std::stringstream response;
-    response << "ORDER_ADDED " << id;
-    if (!trades.empty()) {
-      response << " EXECUTED " << trades.size() << " TRADES";
-      for (const auto &trade : trades) {
-        broadcastTrade(symbol, trade.price, trade.quantity);
-      }
-    }
-    response << "\n";
+    // Async response
+    response << "ORDER_ACCEPTED_ASYNC " << id << "\n";
     return response.str();
 
   } else if (command == "CANCEL") {
@@ -132,7 +139,7 @@ std::string TcpServer::processRequest(int clientSocket,
     OrderId id;
     ss >> symbol >> id;
     engine_.cancelOrder(symbol, id);
-    return "ORDER_CANCELLED\n";
+    return "CANCEL_REQUEST_SENT\n";
 
   } else if (command == "PRINT") {
     return "PRINT_REQUESTED_CHECK_SERVER_LOGS\n";
