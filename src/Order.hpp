@@ -23,6 +23,8 @@ struct Order {
   std::chrono::system_clock::time_point timestamp;
   bool active = true;
 
+  Order() = default;
+
   Order(OrderId id, uint64_t clientOrderId, const std::string &symbol,
         OrderSide side, OrderType type, Price price, Quantity quantity)
       : id(id),

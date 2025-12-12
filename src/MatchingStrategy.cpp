@@ -28,7 +28,8 @@ std::vector<Trade> StandardMatchingStrategy::match(OrderBook& book,
         }
 
         Quantity quantity = std::min(incoming.quantity, ask.quantity);
-        trades.push_back({ask.price, quantity, ask.id, incoming.id});
+        trades.push_back(
+            {incoming.symbol, ask.price, quantity, ask.id, incoming.id});
 
         ask.quantity -= quantity;
         incoming.quantity -= quantity;
@@ -72,7 +73,8 @@ std::vector<Trade> StandardMatchingStrategy::match(OrderBook& book,
         }
 
         Quantity quantity = std::min(incoming.quantity, bid.quantity);
-        trades.push_back({bid.price, quantity, bid.id, incoming.id});
+        trades.push_back(
+            {incoming.symbol, bid.price, quantity, bid.id, incoming.id});
 
         bid.quantity -= quantity;
         incoming.quantity -= quantity;
