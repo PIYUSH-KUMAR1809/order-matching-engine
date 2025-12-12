@@ -126,5 +126,81 @@ Here is the step-by-step technical plan to address the feedback.
     *   **Step B (Optional)**: Replace `std::map` (Node-based) with a flat map structure (e.g., `std::vector<Level>` sorted by price).
 
 ---
-## Round 2: [Date/Topic]
-*(Reserved for future feedback)*
+## Round 2: Community Feedback (December 2025)
+
+### 1. Optimize Order Struct & Cache Locality
+- **Feedback**: "Cache locality - your order class stores a lot of information... Instead of a double you should be using fixed precision, an int32_t is fine. Storing the symbol as part of the order is wasteful. I would go so far to make the linked list implementation intrusive..."
+- **Context**: `Order` struct currently has `std::string symbol` and `double price`. It is stored in a `std::list`.
+- **Improvement**:
+    - **Fixed Precision**: Change `Price` to `int32_t` (fixed point, e.g., cents).
+    - **Remove Symbol**: The OrderBook already knows the symbol; individual orders don't need to store it if they are just nodes in the book.
+    - **Intrusive List**: Embed the `next` pointer inside the `Order` struct itself to avoid `std::list` node allocation overhead and improve locality.
+
+### 2. Contiguous Memory for Price Levels
+- **Feedback**: "std::map over time in a busy book will cause fragmentation... a simple vector of [px, qty, order*] ... might be faster."
+- **Context**: Currently using `std::map` for price levels.
+- **Improvement**:
+    - **Flat Structure**: Use `std::vector` or `std::array<Level, N>` (e.g., N=1000) where `Level` contains `{price, total_qty, head_order_ptr}`.
+    - **Optimization**: Store best bid/ask at the *back* of the vector to allow O(1) push/pop as prices move.
+    - **Benefit**: Fits in L1 cache (16KB for ~1000 entries), zero allocator fragmentation.
+
+### 3. Event Loop Architecture (epoll)
+- **Feedback**: "The thread per connection is the wrong abstraction... a simple single threaded ::poll/::epoll event loop will be faster... 0 lock contention."
+- **Context**: Currently using `TcpServer` with one thread per client (`std::jthread`).
+- **Improvement**:
+    - **Single Threaded**: Use `epoll` (Linux) or `kqueue` (Mac) to handle many connections on a single thread.
+    - **Serialization**: Read orders from network -> Serializing Queue -> Matching Engine.
+    - **Benefit**: Deterministic ordering (crucial for fairness/WAL) and cleaner architecture without locks.
+
+### 4. Recovery & Persistence (WAL)
+- **Feedback**: "imagine if the node running this matching engine died, you need to store the state as a WAL..."
+- **Context**: No persistence currently. Memory-only.
+- **Improvement**:
+    - **WAL (Write-Ahead Log)**: Append every incoming order/cancel to a file before processing.
+    - **Snapshots**: Periodically dump the state of the OrderBooks.
+    - **Replay**: On startup, load snapshot + replay WAL to restore state.
+
+### 5. Profiling & Performance Analysis
+- **Feedback**: "Next would be to profile your code and see what functions are executed the most and consume the most time."
+- **Context**: Performance is critical, but optimizations without data are premature (knuth).
+- **Action**:
+    - **Tools**: Use `perf` (Linux) or `Instruments` (Mac) to profile the engine under load (using the benchmark tool).
+    - **Goal**: Identify hotspots (e.g., `std::map` lookups, mutex contention) to guide the optimizations in points 1 & 2.
+
+### 6. Mutex Choice (std::mutex vs std::shared_mutex)
+- **Feedback**: "You might want to try a regular std::mutex and see if that's faster - std::shared_mutex ... has much higher fixed cost... Hard to know for sure based on synthetic benchmarks..."
+- **Context**: Currently using `std::shared_mutex` for Read-Write locking on the OrderBook.
+- **Hypothesis**: `std::shared_mutex` might be slower due to overhead if the read/write ratio isn't extremely high towards reads.
+    - **Action**: Benchmark `std::mutex` vs `std::shared_mutex` under various read/write loads to see if the simpler lock performs better.
+
+### 7. Benchmark Validity & Methodology
+- **Feedback**: "I think you should rethink the logic of your benchmarks... [it] includes the order generation... pollutes the instruction cache."
+- **Context**: `benchmark.cpp` currently generates random orders inside the measurement loop.
+- **Action**:
+    - **Pre-generation**: Generate all test orders *before* starting the timer. Store them in a vector.
+    - **Clean Measure**: The benchmark loop should only measure `engine.submitOrder()`.
+
+### 8. Allocation-Free Matching Path
+- **Feedback**: "To get good latency... you need to avoid dynamic memory allocation at all costs... StandardMatchingStrategy [uses] a std::vector that you are push()ing to."
+- **Context**: `MatchingStrategy::match` likely returns a `std::vector<Trade>`, causing allocation on every match.
+- **Action**:
+    - **Optimization**: Pass a pre-allocated buffer (or a callback/listener) to `match()` instead of returning a vector.
+    - **Goal**: Zero allocations on the hot path (order submission -> matching -> trade report).
+
+### 9. Metrics Granularity (Latency vs Throughput)
+- **Feedback**: "I would keep two sets of benchmarking metrics, one for orders that don't match, and another for orders that do." "In a real world exchange latency and jitter would matter more than just throughput."
+- **Context**: Currently measuring aggregate throughput.
+- **Action**:
+    - **Split Metrics**: Measure latency (pctiles) separately for:
+        1.  **Passive Orders** (Add to book, no match).
+        2.  **Aggressive Orders** (Match / Trade).
+    - **Focus**: Prioritize minimizing 99th% latency and jitter over raw throughput numbers.
+
+### 10. Sharded vs. Global Multi-threading
+- **Feedback**: "Isn't multi-threaded better than single threaded... [choice] ... performs better and is highly scalable like in real life"
+- **Context**: User prefers multi-threading for scalability.
+- **Clarification**:
+    - **Global Lock Model (Current)**: Threads fight for locks on `OrderBooks`. Scalability limits < # cores.
+    - **Single-Threaded Pure**: One core, no locks. Fastest latency, limited by 1 core speed.
+    - **Sharded Architecture (Best/Real-Life)**: N Single-Threaded Engines (one per core). Each engine owns a subset of symbols (e.g., Core 1: AAPL, Core 2: GOOG).
+    - **Action**: Implement "Shard-per-Core" architecture. Keep multi-threading (1 thread per core), but *remove locks* by ensuring each thread has exclusive access to its shards. This is the "high scalability" solution.
