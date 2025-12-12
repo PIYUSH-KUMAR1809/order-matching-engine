@@ -6,45 +6,55 @@
 
 #include "Exchange.hpp"
 
-void benchmarkWorker(Exchange &engine, int numOrders, int threadId) {
-  std::mt19937 gen(threadId);
-  std::uniform_real_distribution<> priceDist(100.0, 200.0);
-  std::uniform_int_distribution<> qtyDist(1, 100);
-  std::uniform_int_distribution<> typeDist(0, 1);
-
-  for (int i = 0; i < numOrders; ++i) {
-    OrderSide type = (typeDist(gen) == 0) ? OrderSide::Buy : OrderSide::Sell;
-    double price = priceDist(gen);
-    double qty = qtyDist(gen);
-
-    OrderId id = (long)threadId * numOrders + i + 1;
-
-    std::string symbol = "SYM-" + std::to_string(threadId % 10);
-
-    engine.submitOrder(
-        Order(id, 0, symbol, type, OrderType::Limit, price, qty));
+void benchmarkWorker(Exchange &engine, const std::vector<Order> &orders) {
+  for (const auto &order : orders) {
+    engine.submitOrder(order);
   }
 }
 
 int main() {
-  Exchange engine;
   int numThreads = std::thread::hardware_concurrency();
   int ordersPerThread = 100000;
   int totalOrders = numThreads * ordersPerThread;
 
-  std::cout << "Starting benchmark with " << numThreads << " threads..."
+  std::cout << "Preparing benchmark with " << numThreads << " threads..."
             << std::endl;
-  std::cout << "Total orders: " << totalOrders << std::endl;
+  std::cout << "Pre-generating " << totalOrders << " orders..." << std::endl;
+
+  std::vector<std::vector<Order>> threadOrders(numThreads);
+
+  for (int i = 0; i < numThreads; ++i) {
+    threadOrders[i].reserve(ordersPerThread);
+    std::mt19937 gen(i);
+    std::uniform_real_distribution<> priceDist(100.0, 200.0);
+    std::uniform_int_distribution<> qtyDist(1, 100);
+    std::uniform_int_distribution<> typeDist(0, 1);
+
+    for (int j = 0; j < ordersPerThread; ++j) {
+      OrderSide side = (typeDist(gen) == 0) ? OrderSide::Buy : OrderSide::Sell;
+      double price = priceDist(gen);
+      double qty = qtyDist(gen);
+      OrderId id = (long)i * ordersPerThread + j + 1;
+      std::string symbol = "SYM-" + std::to_string(i % 10);
+
+      threadOrders[i].emplace_back(id, 0, symbol, side, OrderType::Limit, price,
+                                   qty);
+    }
+  }
+
+  std::cout << "Starting benchmark..." << std::endl;
 
   auto start = std::chrono::high_resolution_clock::now();
 
-  std::vector<std::thread> threads;
-  for (int i = 0; i < numThreads; ++i) {
-    threads.emplace_back(benchmarkWorker, std::ref(engine), ordersPerThread, i);
-  }
+  {
+    Exchange engine;
+    std::vector<std::jthread> threads;
+    threads.reserve(numThreads);
 
-  for (auto &t : threads) {
-    t.join();
+    for (int i = 0; i < numThreads; ++i) {
+      threads.emplace_back(benchmarkWorker, std::ref(engine),
+                           std::cref(threadOrders[i]));
+    }
   }
 
   auto end = std::chrono::high_resolution_clock::now();
