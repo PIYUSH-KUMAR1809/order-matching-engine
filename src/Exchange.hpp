@@ -46,6 +46,7 @@ class Exchange {
     std::unordered_map<std::string, std::unique_ptr<OrderBook>> books;
     // Each shard has its own strategy instance to be safe
     std::unique_ptr<MatchingStrategy> matchingStrategy;
+    std::vector<Trade> tradeBuffer;  // Reusable buffer to avoid allocations
   };
 
   void workerLoop(int shardId);

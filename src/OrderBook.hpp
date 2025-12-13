@@ -1,9 +1,7 @@
 #pragma once
 
 #include <deque>
-#include <functional>
 #include <map>
-#include <unordered_map>
 #include <vector>
 
 #include "Order.hpp"
@@ -52,5 +50,5 @@ class OrderBook {
   std::map<Price, std::deque<Order>, std::greater<Price>> bids;
   std::map<Price, std::deque<Order>, std::less<Price>> asks;
 
-  std::unordered_map<OrderId, OrderLocation> orderIndex;
+  std::vector<OrderLocation> orderIndex;
 };

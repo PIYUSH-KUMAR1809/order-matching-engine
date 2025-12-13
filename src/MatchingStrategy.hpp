@@ -7,10 +7,12 @@
 class MatchingStrategy {
  public:
   virtual ~MatchingStrategy() = default;
-  virtual std::vector<Trade> match(OrderBook& book, const Order& order) = 0;
+  virtual void match(OrderBook& book, const Order& order,
+                     std::vector<Trade>& out_trades) = 0;
 };
 
 class StandardMatchingStrategy : public MatchingStrategy {
  public:
-  std::vector<Trade> match(OrderBook& book, const Order& order) override;
+  void match(OrderBook& book, const Order& order,
+             std::vector<Trade>& out_trades) override;
 };
