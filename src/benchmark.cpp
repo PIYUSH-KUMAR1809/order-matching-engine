@@ -14,8 +14,8 @@ void benchmarkWorker(Exchange &engine, const std::vector<Order> &orders) {
 
 int main() {
   int numThreads = std::thread::hardware_concurrency();
-  int ordersPerThread = 100000;
-  int totalOrders = numThreads * ordersPerThread;
+  long long ordersPerThread = 100000;
+  long long totalOrders = numThreads * ordersPerThread;
 
   std::cout << "Preparing benchmark with " << numThreads << " threads..."
             << std::endl;
@@ -23,18 +23,18 @@ int main() {
 
   std::vector<std::vector<Order>> threadOrders(numThreads);
 
-  for (int i = 0; i < numThreads; ++i) {
+  for (long long i = 0; i < numThreads; ++i) {
     threadOrders[i].reserve(ordersPerThread);
     std::mt19937 gen(i);
     std::uniform_real_distribution<> priceDist(100.0, 200.0);
     std::uniform_int_distribution<> qtyDist(1, 100);
     std::uniform_int_distribution<> typeDist(0, 1);
 
-    for (int j = 0; j < ordersPerThread; ++j) {
+    for (long long j = 0; j < ordersPerThread; ++j) {
       OrderSide side = (typeDist(gen) == 0) ? OrderSide::Buy : OrderSide::Sell;
       double price = priceDist(gen);
       double qty = qtyDist(gen);
-      OrderId id = (long)i * ordersPerThread + j + 1;
+      OrderId id = (long long)i * ordersPerThread + j + 1;
       std::string symbol = "SYM-" + std::to_string(i % 10);
 
       threadOrders[i].emplace_back(id, 0, symbol, side, OrderType::Limit, price,
@@ -51,7 +51,7 @@ int main() {
     std::vector<std::jthread> threads;
     threads.reserve(numThreads);
 
-    for (int i = 0; i < numThreads; ++i) {
+    for (long long i = 0; i < numThreads; ++i) {
       threads.emplace_back(benchmarkWorker, std::ref(engine),
                            std::cref(threadOrders[i]));
     }
@@ -62,7 +62,7 @@ int main() {
 
   std::cout << "Benchmark completed in " << diff.count() << " seconds."
             << std::endl;
-  std::cout << "Throughput: " << (totalOrders / diff.count())
+  std::cout << "Throughput: " << (long long)(totalOrders / diff.count())
             << " orders/second" << std::endl;
 
   return 0;

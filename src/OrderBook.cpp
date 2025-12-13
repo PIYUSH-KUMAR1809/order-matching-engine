@@ -3,8 +3,12 @@
 #include <iostream>
 
 void OrderBook::addOrderInternal(const Order &order) {
-  if (orderIndex.find(order.id) != orderIndex.end()) {
-    return;
+  if (order.id >= orderIndex.size()) {
+    orderIndex.resize(order.id + 1, {0, OrderSide::Buy, nullptr});
+  }
+
+  if (orderIndex[order.id].orderPtr != nullptr) {
+    return;  // Already exists
   }
 
   if (order.side == OrderSide::Buy) {
@@ -19,21 +23,20 @@ void OrderBook::addOrderInternal(const Order &order) {
 }
 
 void OrderBook::removeOrderInternal(OrderId orderId) {
-  auto it = orderIndex.find(orderId);
-  if (it == orderIndex.end()) {
-    return;
-  }
+  if (orderId >= orderIndex.size()) return;
 
-  const auto &location = it->second;
-  if (location.orderPtr) {
-    location.orderPtr->active = false;
-  }
+  auto &location = orderIndex[orderId];
+  if (location.orderPtr == nullptr) return;
 
-  orderIndex.erase(it);
+  location.orderPtr->active = false;
+
+  // Clear the location
+  location = {0, OrderSide::Buy, nullptr};
 }
 
 void OrderBook::removeIndexInternal(OrderId orderId) {
-  orderIndex.erase(orderId);
+  if (orderId >= orderIndex.size()) return;
+  orderIndex[orderId] = {0, OrderSide::Buy, nullptr};
 }
 
 std::vector<Trade> OrderBook::addOrder(const Order &order) {

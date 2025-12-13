@@ -2,9 +2,9 @@
 
 #include <algorithm>
 
-std::vector<Trade> StandardMatchingStrategy::match(OrderBook& book,
-                                                   const Order& order) {
-  std::vector<Trade> trades;
+void StandardMatchingStrategy::match(OrderBook& book, const Order& order,
+                                     std::vector<Trade>& trades) {
+  trades.clear();
   Order incoming = order;
 
   if (incoming.side == OrderSide::Buy) {
@@ -97,6 +97,4 @@ std::vector<Trade> StandardMatchingStrategy::match(OrderBook& book,
       book.addOrderInternal(incoming);
     }
   }
-
-  return trades;
 }

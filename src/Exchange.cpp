@@ -83,11 +83,10 @@ void Exchange::workerLoop(int shardId) {
 
     if (cmd.type == Command::Add) {
       // No locks needed on book here! Single threaded access.
-      std::vector<Trade> trades =
-          shard.matchingStrategy->match(book, cmd.order);
+      shard.matchingStrategy->match(book, cmd.order, shard.tradeBuffer);
 
-      if (!trades.empty() && onTrade_) {
-        onTrade_(trades);
+      if (!shard.tradeBuffer.empty() && onTrade_) {
+        onTrade_(shard.tradeBuffer);
       }
     } else if (cmd.type == Command::Cancel) {
       book.cancelOrder(cmd.cancelId);
