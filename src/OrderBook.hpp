@@ -39,6 +39,7 @@ class OrderBook {
   void addOrderInternal(const Order &order);
   void removeOrderInternal(OrderId orderId);
   void removeIndexInternal(OrderId orderId);
+  void compact();
 
  private:
   struct OrderLocation {

@@ -91,6 +91,20 @@ void Exchange::workerLoop(int shardId) {
     } else if (cmd.type == Command::Cancel) {
       book.cancelOrder(cmd.cancelId);
     }
+
+    // Auto-compaction strategy:
+    // If queue is empty (we are idle), check if we should compact.
+    // In a real system we'd track "deletedCount" per book.
+    // Here we just do it proactively if idle to keep memory clean.
+    {
+      std::unique_lock<std::mutex> lock(shard.queueMutex);
+      if (shard.queue.empty()) {
+        lock.unlock();  // Release lock before working
+        for (auto &pair : shard.books) {
+          pair.second->compact();
+        }
+      }
+    }
   }
 }
 
