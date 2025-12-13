@@ -20,7 +20,8 @@ class TcpServer {
   void handleClient(int clientSocket);
   std::string processRequest(int clientSocket, const std::string &request);
   void removeClient(int clientSocket);
-  void broadcastTrade(const std::string &symbol, double price, double quantity);
+  void broadcastTrade(const std::string &symbol, Price price,
+                      Quantity quantity);
 
   Exchange &engine_;
   int port_;

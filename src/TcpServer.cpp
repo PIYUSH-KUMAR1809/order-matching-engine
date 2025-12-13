@@ -111,8 +111,8 @@ std::string TcpServer::processRequest(int clientSocket,
 
   if (command == "BUY" || command == "SELL") {
     std::string symbol;
-    double quantity;
-    double price;
+    Quantity quantity;
+    Price price;
     ss >> symbol >> quantity >> price;
 
     OrderSide side = (command == "BUY") ? OrderSide::Buy : OrderSide::Sell;
@@ -190,8 +190,8 @@ void TcpServer::removeClient(int clientSocket) {
   }
 }
 
-void TcpServer::broadcastTrade(const std::string &symbol, double price,
-                               double quantity) {
+void TcpServer::broadcastTrade(const std::string &symbol, Price price,
+                               Quantity quantity) {
   std::lock_guard<std::mutex> lock(subscribersMutex_);
   if (subscribers_.find(symbol) == subscribers_.end()) {
     return;
