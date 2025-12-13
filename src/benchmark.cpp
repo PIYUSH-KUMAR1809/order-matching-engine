@@ -26,13 +26,14 @@ int main() {
   for (long long i = 0; i < numThreads; ++i) {
     threadOrders[i].reserve(ordersPerThread);
     std::mt19937 gen(i);
-    std::uniform_real_distribution<> priceDist(100.0, 200.0);
+    std::uniform_int_distribution<long long> priceDist(
+        10000, 20000);  // 100.00 to 200.00
     std::uniform_int_distribution<> qtyDist(1, 100);
     std::uniform_int_distribution<> typeDist(0, 1);
 
     for (long long j = 0; j < ordersPerThread; ++j) {
       OrderSide side = (typeDist(gen) == 0) ? OrderSide::Buy : OrderSide::Sell;
-      double price = priceDist(gen);
+      Price price = priceDist(gen);
       double qty = qtyDist(gen);
       OrderId id = (long long)i * ordersPerThread + j + 1;
       std::string symbol = "SYM-" + std::to_string(i % 10);

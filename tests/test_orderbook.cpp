@@ -44,7 +44,7 @@ class ExchangeLogicTest : public ::testing::Test {
 
 TEST_F(ExchangeLogicTest, AddOrder) {
   engine.submitOrder(
-      Order(1, 0, "TEST", OrderSide::Sell, OrderType::Limit, 100.0, 10));
+      Order(1, 0, "TEST", OrderSide::Sell, OrderType::Limit, 10000, 10));
 
   waitForProcessing();
 
@@ -58,9 +58,9 @@ TEST_F(ExchangeLogicTest, AddOrder) {
 
 TEST_F(ExchangeLogicTest, MatchFull) {
   engine.submitOrder(
-      Order(1, 0, "TEST", OrderSide::Sell, OrderType::Limit, 100.0, 10));
+      Order(1, 0, "TEST", OrderSide::Sell, OrderType::Limit, 10000, 10));
   engine.submitOrder(
-      Order(2, 0, "TEST", OrderSide::Buy, OrderType::Limit, 100.0, 10));
+      Order(2, 0, "TEST", OrderSide::Buy, OrderType::Limit, 10000, 10));
 
   auto trades = waitForTrades(1);
   ASSERT_EQ(trades.size(), 1);
@@ -74,9 +74,9 @@ TEST_F(ExchangeLogicTest, MatchFull) {
 
 TEST_F(ExchangeLogicTest, MatchPartial) {
   engine.submitOrder(
-      Order(1, 0, "TEST", OrderSide::Sell, OrderType::Limit, 100.0, 20));
+      Order(1, 0, "TEST", OrderSide::Sell, OrderType::Limit, 10000, 20));
   engine.submitOrder(
-      Order(2, 0, "TEST", OrderSide::Buy, OrderType::Limit, 100.0, 10));
+      Order(2, 0, "TEST", OrderSide::Buy, OrderType::Limit, 10000, 10));
 
   auto trades = waitForTrades(1);
   ASSERT_EQ(trades.size(), 1);
@@ -89,7 +89,7 @@ TEST_F(ExchangeLogicTest, MatchPartial) {
   auto& asks = book->getAsks();
   bool found = false;
   if (!asks.empty()) {
-    for (const auto& order : asks.at(100.0)) {
+    for (const auto& order : asks.at(10000)) {
       if (order.id == 1 && order.active) {
         ASSERT_EQ(order.quantity, 10);
         found = true;
@@ -101,9 +101,9 @@ TEST_F(ExchangeLogicTest, MatchPartial) {
 
 TEST_F(ExchangeLogicTest, NoMatch) {
   engine.submitOrder(
-      Order(1, 0, "TEST", OrderSide::Sell, OrderType::Limit, 101.0, 10));
+      Order(1, 0, "TEST", OrderSide::Sell, OrderType::Limit, 10100, 10));
   engine.submitOrder(
-      Order(2, 0, "TEST", OrderSide::Buy, OrderType::Limit, 100.0, 10));
+      Order(2, 0, "TEST", OrderSide::Buy, OrderType::Limit, 10000, 10));
 
   waitForProcessing();
 
@@ -118,7 +118,7 @@ TEST_F(ExchangeLogicTest, NoMatch) {
 
 TEST_F(ExchangeLogicTest, CancelOrder) {
   engine.submitOrder(
-      Order(1, 0, "TEST", OrderSide::Sell, OrderType::Limit, 100.0, 10));
+      Order(1, 0, "TEST", OrderSide::Sell, OrderType::Limit, 10000, 10));
 
   waitForProcessing();
 
@@ -144,18 +144,18 @@ TEST_F(ExchangeLogicTest, CancelOrder) {
 
 TEST_F(ExchangeLogicTest, MarketOrderFullFill) {
   engine.submitOrder(
-      Order(1, 0, "TEST", OrderSide::Sell, OrderType::Limit, 100.0, 10));
+      Order(1, 0, "TEST", OrderSide::Sell, OrderType::Limit, 10000, 10));
 
   waitForProcessing();
 
   engine.submitOrder(
-      Order(2, 0, "TEST", OrderSide::Buy, OrderType::Market, 0.0, 10));
+      Order(2, 0, "TEST", OrderSide::Buy, OrderType::Market, 0, 10));
 
   auto trades = waitForTrades(1);
 
   ASSERT_EQ(trades.size(), 1);
   ASSERT_EQ(trades[0].quantity, 10);
-  ASSERT_EQ(trades[0].price, 100.0);
+  ASSERT_EQ(trades[0].price, 10000);
 }
 
 TEST(ExchangeTest, MultiAssetIsolation) {
@@ -171,13 +171,13 @@ TEST(ExchangeTest, MultiAssetIsolation) {
   });
 
   engine.submitOrder(
-      Order(1, 0, "AAPL", OrderSide::Sell, OrderType::Limit, 150.0, 100));
+      Order(1, 0, "AAPL", OrderSide::Sell, OrderType::Limit, 15000, 100));
 
   engine.submitOrder(
-      Order(2, 0, "GOOG", OrderSide::Buy, OrderType::Limit, 150.0, 100));
+      Order(2, 0, "GOOG", OrderSide::Buy, OrderType::Limit, 15000, 100));
 
   engine.submitOrder(
-      Order(3, 0, "AAPL", OrderSide::Buy, OrderType::Limit, 150.0, 50));
+      Order(3, 0, "AAPL", OrderSide::Buy, OrderType::Limit, 15000, 50));
 
   std::unique_lock<std::mutex> lock(mtx);
   cv.wait_for(lock, std::chrono::milliseconds(500),

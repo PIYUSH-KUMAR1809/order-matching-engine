@@ -68,3 +68,53 @@ void OrderBook::printBook() const {
   }
   std::cout << "------------------" << std::endl;
 }
+
+void OrderBook::compact() {
+  // Compact Bids
+  for (auto &pair : bids) {
+    auto &queue = pair.second;
+    std::vector<Order> validOrders;
+    validOrders.reserve(queue.size());
+
+    bool needsCompaction = false;
+    for (const auto &order : queue) {
+      if (order.active) {
+        validOrders.push_back(order);
+      } else {
+        needsCompaction = true;
+      }
+    }
+
+    if (needsCompaction) {
+      queue.assign(validOrders.begin(), validOrders.end());
+      // Re-point index pointers
+      for (auto &order : queue) {
+        orderIndex[order.id].orderPtr = &order;
+      }
+    }
+  }
+
+  // Compact Asks
+  for (auto &pair : asks) {
+    auto &queue = pair.second;
+    std::vector<Order> validOrders;
+    validOrders.reserve(queue.size());
+
+    bool needsCompaction = false;
+    for (const auto &order : queue) {
+      if (order.active) {
+        validOrders.push_back(order);
+      } else {
+        needsCompaction = true;
+      }
+    }
+
+    if (needsCompaction) {
+      queue.assign(validOrders.begin(), validOrders.end());
+      // Re-point index pointers
+      for (auto &order : queue) {
+        orderIndex[order.id].orderPtr = &order;
+      }
+    }
+  }
+}

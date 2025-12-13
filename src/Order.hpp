@@ -9,7 +9,7 @@ enum class OrderSide { Buy, Sell };
 enum class OrderType { Limit, Market };
 
 using OrderId = uint64_t;
-using Price = double;
+using Price = int64_t;
 using Quantity = uint32_t;
 
 struct Order {
