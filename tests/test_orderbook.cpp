@@ -37,7 +37,6 @@ class ExchangeLogicTest : public ::testing::Test {
   }
 
   void waitForProcessing() {
-    // Simple wait to allow worker threads to catch up
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
   }
 };
@@ -50,7 +49,6 @@ TEST_F(ExchangeLogicTest, AddOrder) {
 
   const OrderBook* book = engine.getOrderBook("TEST");
   ASSERT_NE(book, nullptr);
-  // Note: Unsafe access, but okay for test if worker is idle
   auto& asks = book->getAsks();
   ASSERT_EQ(asks.size(), 1);
   ASSERT_EQ(asks.begin()->second.front().quantity, 10);
@@ -84,8 +82,6 @@ TEST_F(ExchangeLogicTest, MatchPartial) {
 
   const OrderBook* book = engine.getOrderBook("TEST");
   ASSERT_NE(book, nullptr);
-
-  // Check remaining order
   auto& asks = book->getAsks();
   bool found = false;
   if (!asks.empty()) {
@@ -107,7 +103,7 @@ TEST_F(ExchangeLogicTest, NoMatch) {
 
   waitForProcessing();
 
-  auto loopTrades = waitForTrades(1, 50);  // Should timeout
+  auto loopTrades = waitForTrades(1, 50);
   ASSERT_TRUE(loopTrades.empty());
 
   const OrderBook* book = engine.getOrderBook("TEST");
@@ -128,10 +124,6 @@ TEST_F(ExchangeLogicTest, CancelOrder) {
 
   const OrderBook* book = engine.getOrderBook("TEST");
   ASSERT_NE(book, nullptr);
-
-  // Verify order is marked inactive or removed
-  // Our implementation marks inactive then cleans up lazily?
-  // removeOrderInternal sets active=false.
 
   int activeCount = 0;
   for (const auto& pair : book->getAsks()) {

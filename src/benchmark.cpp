@@ -27,7 +27,7 @@ int main() {
     threadOrders[i].reserve(ordersPerThread);
     std::mt19937 gen(i);
     std::uniform_int_distribution<long long> priceDist(
-        10000, 20000);  // 100.00 to 200.00
+        10000, 20000); 
     std::uniform_int_distribution<> qtyDist(1, 100);
     std::uniform_int_distribution<> typeDist(0, 1);
 

@@ -9,18 +9,15 @@ Exchange::Exchange() {
   shards_.resize(numWorkers);
   for (int i = 0; i < numWorkers; ++i) {
     shards_[i] = std::make_unique<Shard>();
-    // Each shard gets its own matching strategy instance
     shards_[i]->matchingStrategy = std::make_unique<StandardMatchingStrategy>();
   }
 
-  // Start workers
   for (int i = 0; i < numWorkers; ++i) {
     workers_.emplace_back(&Exchange::workerLoop, this, i);
   }
 }
 
 Exchange::~Exchange() {
-  // Stop workers by sending Stop command
   for (auto &shard : shards_) {
     {
       std::lock_guard<std::mutex> lock(shard->queueMutex);
@@ -28,7 +25,6 @@ Exchange::~Exchange() {
     }
     shard->cv.notify_one();
   }
-  // jthread joins automatically
 }
 
 size_t Exchange::getShardId(const std::string &symbol) const {
@@ -82,7 +78,6 @@ void Exchange::workerLoop(int shardId) {
     auto &book = *shard.books[cmd.symbol];
 
     if (cmd.type == Command::Add) {
-      // No locks needed on book here! Single threaded access.
       shard.matchingStrategy->match(book, cmd.order, shard.tradeBuffer);
 
       if (!shard.tradeBuffer.empty() && onTrade_) {
@@ -92,14 +87,10 @@ void Exchange::workerLoop(int shardId) {
       book.cancelOrder(cmd.cancelId);
     }
 
-    // Auto-compaction strategy:
-    // If queue is empty (we are idle), check if we should compact.
-    // In a real system we'd track "deletedCount" per book.
-    // Here we just do it proactively if idle to keep memory clean.
     {
       std::unique_lock<std::mutex> lock(shard.queueMutex);
       if (shard.queue.empty()) {
-        lock.unlock();  // Release lock before working
+        lock.unlock();
         for (auto &pair : shard.books) {
           pair.second->compact();
         }
@@ -108,18 +99,9 @@ void Exchange::workerLoop(int shardId) {
   }
 }
 
-// Debug methods - Note: These are racy if system is running!
-// For a proper implementation, we'd need a "GetState" command/future.
-// For now, we accept the race for debug printing.
 void Exchange::printOrderBook(const std::string &symbol) const {
   size_t shardId = getShardId(symbol);
   const auto &shard = *shards_[shardId];
-
-  // Need to lock queue mutex just to be vaguely safe against map insertion??
-  // Actually, map insertion happens in worker thread. Reading it here is a data
-  // race. BUT: printOrderBook is usually called when system is quiescent (e.g.
-  // main loop). We'll leave it racy for now as fixing it requires a
-  // "RequestPrint" command.
 
   if (shard.books.find(symbol) != shard.books.end()) {
     std::cout << "Symbol: " << symbol << std::endl;

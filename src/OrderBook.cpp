@@ -8,7 +8,7 @@ void OrderBook::addOrderInternal(const Order &order) {
   }
 
   if (orderIndex[order.id].orderPtr != nullptr) {
-    return;  // Already exists
+    return;
   }
 
   if (order.side == OrderSide::Buy) {
@@ -30,7 +30,6 @@ void OrderBook::removeOrderInternal(OrderId orderId) {
 
   location.orderPtr->active = false;
 
-  // Clear the location
   location = {0, OrderSide::Buy, nullptr};
 }
 
@@ -70,7 +69,6 @@ void OrderBook::printBook() const {
 }
 
 void OrderBook::compact() {
-  // Compact Bids
   for (auto &pair : bids) {
     auto &queue = pair.second;
     std::vector<Order> validOrders;
@@ -87,14 +85,12 @@ void OrderBook::compact() {
 
     if (needsCompaction) {
       queue.assign(validOrders.begin(), validOrders.end());
-      // Re-point index pointers
       for (auto &order : queue) {
         orderIndex[order.id].orderPtr = &order;
       }
     }
   }
 
-  // Compact Asks
   for (auto &pair : asks) {
     auto &queue = pair.second;
     std::vector<Order> validOrders;
@@ -111,7 +107,6 @@ void OrderBook::compact() {
 
     if (needsCompaction) {
       queue.assign(validOrders.begin(), validOrders.end());
-      // Re-point index pointers
       for (auto &order : queue) {
         orderIndex[order.id].orderPtr = &order;
       }

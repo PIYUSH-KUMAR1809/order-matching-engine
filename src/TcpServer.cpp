@@ -13,12 +13,8 @@
 
 TcpServer::TcpServer(Exchange &engine, int port)
     : engine_(engine), port_(port), serverSocket_(-1), running_(false) {
-  // Register callback to broadcast trades whenever they happen
   engine_.setTradeCallback([this](const std::vector<Trade> &trades) {
     for (const auto &trade : trades) {
-      // Since this is called from worker thread, broadCastTrade uses a mutex so
-      // it's safe We use the symbol from the first trade if possible, or
-      // iterate? Broadcast trade to subscribes of that symbol
       if (!trade.symbol.empty()) {
         broadcastTrade(trade.symbol, trade.price, trade.quantity);
       }
@@ -130,7 +126,6 @@ std::string TcpServer::processRequest(int clientSocket,
     engine_.submitOrder(order);
 
     std::stringstream response;
-    // Async response
     response << "ORDER_ACCEPTED_ASYNC " << id << "\n";
     return response.str();
 
