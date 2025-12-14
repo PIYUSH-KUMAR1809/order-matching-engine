@@ -22,6 +22,10 @@ void OrderBook::addOrderInternal(const Order &order) {
   }
 }
 
+
+// When user wants to cancel an order, we set the order to inactive.
+// This is lazy deletion, we don't remove the order from the order book
+// immediately. We just set the order to inactive.
 void OrderBook::removeOrderInternal(OrderId orderId) {
   if (orderId >= orderIndex.size()) return;
 
@@ -33,16 +37,23 @@ void OrderBook::removeOrderInternal(OrderId orderId) {
   location = {0, OrderSide::Buy, nullptr};
 }
 
+// Called by matching engine after successfully matching an order.
+// Since order is completely removed from the order book, we just remove the
+// index entry.
 void OrderBook::removeIndexInternal(OrderId orderId) {
   if (orderId >= orderIndex.size()) return;
   orderIndex[orderId] = {0, OrderSide::Buy, nullptr};
 }
 
+// Currently simply calling addOrderInternal, this function can later be used to
+// add validations and logging
 std::vector<Trade> OrderBook::addOrder(const Order &order) {
   addOrderInternal(order);
   return {};
 }
 
+// Currently simply calling removeOrderInternal, this function can later be used
+// to add validations and logging
 void OrderBook::cancelOrder(OrderId orderId) { removeOrderInternal(orderId); }
 
 void OrderBook::printBook() const {
