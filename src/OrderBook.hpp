@@ -36,9 +36,16 @@ class OrderBook {
     return asks;
   }
 
+  // Internal function to add order to the order book
   void addOrderInternal(const Order &order);
+
+  // Internal function to soft delete the order
   void removeOrderInternal(OrderId orderId);
+
+  // Removing the entry from vector by setting pointer to null
   void removeIndexInternal(OrderId orderId);
+
+  // Called during downtime to remove the soft deleted orders
   void compact();
 
  private:
