@@ -1,4 +1,4 @@
-# Delete current build diectory
+# Delete current build directory
 rm -rf ./build
 
 # Create new build directory
