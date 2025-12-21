@@ -2,11 +2,11 @@
 
 A high-frequency trading (HFT) grade Limit Order Book (LOB) and Matching Engine written in C++20. Designed for extreme throughput, low latency, and memory safety.
 
-> **Performance Benchmark**: **~2,200,000 orders/second** on a 10-core machine.
+> **Performance Benchmark**: **~7,000,000 orders/second** on a 10-core machine.
 
 ## 🚀 Key Features
 
-*   **Ultra-High Throughput**: Capable of processing over 2.2 million distinct order operations per second.
+*   **Ultra-High Throughput**: Capable of processing over 7 million distinct order operations per second.
 *   **Sharded Concurrency Architecture**: Uses a **Lock-Free-ish** design where the order book is sharded by symbol. Each shard is pinned to a dedicated worker thread, eliminating mutex contention during matching.
 *   **Memory Safe & Efficient**:
     *   **Lazy Deletion w/ Compaction**: Uses a high-performance lazy deletion strategy with automated memory compaction to prevent leaks.
