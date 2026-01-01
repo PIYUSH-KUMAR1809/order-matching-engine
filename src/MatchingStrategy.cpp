@@ -1,6 +1,7 @@
 #include "MatchingStrategy.hpp"
 
 #include <algorithm>
+#include <cstring>
 
 void StandardMatchingStrategy::match(OrderBook& book, const Order& order,
                                      std::vector<Trade>& trades) {
@@ -8,93 +9,112 @@ void StandardMatchingStrategy::match(OrderBook& book, const Order& order,
   Order incoming = order;
 
   if (incoming.side == OrderSide::Buy) {
-    auto& asks = book.getAsksInternal();
-    auto askIt = asks.begin();
+    Price currentPrice = book.getBestAsk();
+    if (currentPrice >= OrderBook::MAX_PRICE) currentPrice = book.getNextAsk(0);
 
-    while (incoming.quantity > 0 && askIt != asks.end()) {
-      auto& askQueue = askIt->second;
+    while (incoming.quantity > 0) {
+      currentPrice = book.getNextAsk(currentPrice);
+      if (currentPrice >= OrderBook::MAX_PRICE) break;
+      if (incoming.type == OrderType::Limit && currentPrice > incoming.price)
+        break;
 
-      while (!askQueue.empty() && incoming.quantity > 0) {
-        Order& ask = askQueue.front();
+      int32_t headIdx = book.getOrderHead(currentPrice, OrderSide::Sell);
+      int32_t currIdx = headIdx;
 
-        if (!ask.active) {
-          book.removeIndexInternal(ask.id);
-          askQueue.pop_front();
+      while (currIdx != -1) {
+        OrderNode& askNode = book.getNode(currIdx);
+
+        if (!askNode.active) {
+          currIdx = askNode.next;
           continue;
         }
 
-        if (incoming.type == OrderType::Limit && incoming.price < ask.price) {
-          goto end_match_buy;
-        }
+        Quantity quantity = std::min(incoming.quantity, askNode.order.quantity);
 
-        Quantity quantity = std::min(incoming.quantity, ask.quantity);
-        trades.push_back(
-            {incoming.symbol, ask.price, quantity, ask.id, incoming.id});
+        Trade t;
+        std::memcpy(t.symbol, incoming.symbol, 8);
+        t.price = askNode.order.price;
+        t.quantity = quantity;
+        t.makerOrderId = askNode.order.id;
+        t.takerOrderId = incoming.id;
+        trades.push_back(t);
 
-        ask.quantity -= quantity;
+        askNode.order.quantity -= quantity;
         incoming.quantity -= quantity;
 
-        if (ask.quantity == 0) {
-          book.removeIndexInternal(ask.id);
-          askQueue.pop_front();
+        if (askNode.order.quantity == 0) {
+          askNode.active = false;
         }
+
+        if (incoming.quantity == 0) break;
+
+        currIdx = askNode.next;
       }
 
-      if (askQueue.empty()) {
-        askIt = asks.erase(askIt);
-      } else {
-        ++askIt;
+      if (incoming.quantity > 0) {
+        book.resetLevel(currentPrice, OrderSide::Sell);
       }
+      currentPrice++;
     }
-  end_match_buy:;
 
     if (incoming.quantity > 0 && incoming.type == OrderType::Limit) {
-      book.addOrderInternal(incoming);
+      book.addOrder(incoming);
     }
 
   } else {
-    auto& bids = book.getBidsInternal();
-    auto bidIt = bids.begin();
+    Price currentPrice = book.getBestBid();
 
-    while (incoming.quantity > 0 && bidIt != bids.end()) {
-      auto& bidQueue = bidIt->second;
+    while (incoming.quantity > 0) {
+      currentPrice = book.getNextBid(currentPrice);
+      if (currentPrice == 0 && book.getOrderHead(0, OrderSide::Buy) == -1)
+        break;
 
-      while (!bidQueue.empty() && incoming.quantity > 0) {
-        Order& bid = bidQueue.front();
+      if (incoming.type == OrderType::Limit && currentPrice < incoming.price)
+        break;
 
-        if (!bid.active) {
-          book.removeIndexInternal(bid.id);
-          bidQueue.pop_front();
+      int32_t headIdx = book.getOrderHead(currentPrice, OrderSide::Buy);
+      int32_t currIdx = headIdx;
+
+      while (currIdx != -1) {
+        OrderNode& bidNode = book.getNode(currIdx);
+
+        if (!bidNode.active) {
+          currIdx = bidNode.next;
           continue;
         }
 
-        if (incoming.type == OrderType::Limit && incoming.price > bid.price) {
-          goto end_match_sell;
-        }
+        Quantity quantity = std::min(incoming.quantity, bidNode.order.quantity);
 
-        Quantity quantity = std::min(incoming.quantity, bid.quantity);
-        trades.push_back(
-            {incoming.symbol, bid.price, quantity, bid.id, incoming.id});
+        Trade t;
+        std::memcpy(t.symbol, incoming.symbol, 8);
+        t.price = bidNode.order.price;
+        t.quantity = quantity;
+        t.makerOrderId = bidNode.order.id;
+        t.takerOrderId = incoming.id;
+        trades.push_back(t);
 
-        bid.quantity -= quantity;
+        bidNode.order.quantity -= quantity;
         incoming.quantity -= quantity;
 
-        if (bid.quantity == 0) {
-          book.removeIndexInternal(bid.id);
-          bidQueue.pop_front();
+        if (bidNode.order.quantity == 0) {
+          bidNode.active = false;
         }
+
+        if (incoming.quantity == 0) break;
+
+        currIdx = bidNode.next;
       }
 
-      if (bidQueue.empty()) {
-        bidIt = bids.erase(bidIt);
-      } else {
-        ++bidIt;
+      if (incoming.quantity > 0) {
+        book.resetLevel(currentPrice, OrderSide::Buy);
       }
+
+      if (currentPrice == 0) break;
+      currentPrice--;
     }
-  end_match_sell:;
 
     if (incoming.quantity > 0 && incoming.type == OrderType::Limit) {
-      book.addOrderInternal(incoming);
+      book.addOrder(incoming);
     }
   }
 }

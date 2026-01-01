@@ -1,7 +1,7 @@
 #pragma once
 
-#include <chrono>
 #include <cstdint>
+#include <cstring>
 #include <string>
 
 enum class OrderSide { Buy, Sell };
@@ -18,21 +18,25 @@ struct Order {
   OrderType type;
   Price price;
   Quantity quantity;
-  std::string symbol;
+  char symbol[8];
   uint64_t clientOrderId;
-  std::chrono::system_clock::time_point timestamp;
+
   bool active = true;
 
   Order() = default;
 
-  Order(OrderId id, uint64_t clientOrderId, const std::string &symbol,
+  Order(OrderId id, uint64_t clientOrderId, const std::string &sym,
         OrderSide side, OrderType type, Price price, Quantity quantity)
       : id(id),
         clientOrderId(clientOrderId),
-        symbol(symbol),
         side(side),
         type(type),
         price(price),
-        quantity(quantity),
-        timestamp(std::chrono::system_clock::now()) {}
+        quantity(quantity)
+  {
+    std::memset(symbol, 0, 8);
+    std::strncpy(symbol, sym.c_str(), 7);
+  }
+
+  std::string getSymbol() const { return std::string(symbol); }
 };

@@ -1,16 +1,14 @@
 #pragma once
 
-#include <condition_variable>
-#include <deque>
 #include <functional>
 #include <memory>
-#include <mutex>
 #include <string>
 #include <thread>
 #include <unordered_map>
 #include <vector>
 
 #include "MatchingStrategy.hpp"
+#include "RingBuffer.hpp"
 
 class Exchange {
  public:
@@ -19,7 +17,7 @@ class Exchange {
   Exchange();
   ~Exchange();
 
-  void submitOrder(const Order &order);
+  void submitOrder(const Order &order, int shardHint = -1);
   void cancelOrder(const std::string &symbol, OrderId orderId);
 
   void setTradeCallback(TradeCallback cb);
@@ -37,9 +35,7 @@ class Exchange {
   };
 
   struct Shard {
-    std::mutex queueMutex;
-    std::deque<Command> queue;
-    std::condition_variable cv;
+    RingBuffer<Command> queue{65536};
     std::unordered_map<std::string, std::unique_ptr<OrderBook>> books;
     std::unique_ptr<MatchingStrategy> matchingStrategy;
     std::vector<Trade> tradeBuffer;

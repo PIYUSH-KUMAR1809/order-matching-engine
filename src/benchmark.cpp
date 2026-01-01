@@ -6,15 +6,16 @@
 
 #include "Exchange.hpp"
 
-void benchmarkWorker(Exchange &engine, const std::vector<Order> &orders) {
+void benchmarkWorker(Exchange &engine, const std::vector<Order> &orders,
+                     int threadId) {
   for (const auto &order : orders) {
-    engine.submitOrder(order);
+    engine.submitOrder(order, threadId);
   }
 }
 
 int main() {
   int numThreads = std::thread::hardware_concurrency();
-  long long ordersPerThread = 100000;
+  long long ordersPerThread = 10000000;
   long long totalOrders = numThreads * ordersPerThread;
 
   std::cout << "Preparing benchmark with " << numThreads << " threads..."
@@ -26,8 +27,7 @@ int main() {
   for (long long i = 0; i < numThreads; ++i) {
     threadOrders[i].reserve(ordersPerThread);
     std::mt19937 gen(i);
-    std::uniform_int_distribution<long long> priceDist(
-        10000, 20000); 
+    std::uniform_int_distribution<long long> priceDist(10000, 20000);
     std::uniform_int_distribution<> qtyDist(1, 100);
     std::uniform_int_distribution<> typeDist(0, 1);
 
@@ -54,7 +54,7 @@ int main() {
 
     for (long long i = 0; i < numThreads; ++i) {
       threads.emplace_back(benchmarkWorker, std::ref(engine),
-                           std::cref(threadOrders[i]));
+                           std::cref(threadOrders[i]), i);
     }
   }
 

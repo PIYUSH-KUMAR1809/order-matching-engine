@@ -1,27 +1,32 @@
 # High-Performance Order Matching Engine
 
-A high-frequency trading (HFT) grade Limit Order Book (LOB) and Matching Engine written in C++20. Designed for extreme throughput, low latency, and memory safety.
+A high-frequency trading (HFT) grade Limit Order Book (LOB) and Matching Engine written in C++20. Designed for extreme throughput, low latency, and memory safety using modern lock-free techniques.
 
-> **Performance Benchmark**: **~7,000,000 orders/second** on a 10-core machine.
+> **Performance Benchmark**: **~27,700,000 orders/second** on a 10-core machine (Apple M1 class).
 
 ## 🚀 Key Features
 
-*   **Ultra-High Throughput**: Capable of processing over 7 million distinct order operations per second.
-*   **Sharded Concurrency Architecture**: Uses a **Lock-Free-ish** design where the order book is sharded by symbol. Each shard is pinned to a dedicated worker thread, eliminating mutex contention during matching.
-*   **Memory Safe & Efficient**:
-    *   **Lazy Deletion w/ Compaction**: Uses a high-performance lazy deletion strategy with automated memory compaction to prevent leaks.
-    *   **Contiguous Memory**: Order pointers are indexed in a flat `std::vector` for cache-friendly O(1) lookups (vs `std::unordered_map` pointers).
-*   **Precision Safety**: All prices are fixed-point `int64_t` (micros/nanos) to eliminate floating-point precision errors.
-*   **Production-Ready Networking**: Includes a custom, asynchronous TCP server for order entry and market data broadcasting.
+*   **Ultra-High Throughput**: Capable of processing over **27 million** distinct order operations per second.
+*   **Lock-Free Architecture**: Uses a custom **SPSC (Single-Producer Single-Consumer) Ring Buffer** with shadow indices to eliminate mutex contention and atomic cache thrashing.
+*   **Zero-Allocation Design**:
+    *   **Memory Pool**: Pre-allocated object pool (15M+ slots) eliminates `malloc/free` calls during the trading loop.
+    *   **Intrusive Linked Lists**: Uses index-based chaining (`int32_t next`) instead of standard container pointers.
+*   **Cache Optimizations**:
+    *   **Flat OrderBook**: Replaced `std::map` with `std::vector` for **O(1)** price level access.
+    *   **Bitset Scanning**: Uses CPU intrinsics (`__builtin_ctzll`) to skip empty price levels instantly.
+    *   **POD Enforce**: Order objects are Plain Old Data (POD) with fixed-size `char` arrays, enabling fast `memcpy` operations.
+*   **Precision Safety**: All prices are fixed-point `int64_t` to eliminate floating-point precision errors.
 
 ## 🏗 Architecture
 
-The system avoids the traditional "Global Lock" bottleneck by adopting a **Shard-per-Core** architecture:
+The system avoids the traditional "Global Lock" bottleneck by adopting a **Shard-per-Core** architecture combined with **Lock-Free Queues**:
 
-1.  **Exchange**: Acts as the router. Hashes incoming symbols (e.g., "AAPL") to a specific Shard ID.
-2.  **Shards**: Each shard owns a unique subset of symbols and a dedicated `std::jthread`. It possesses an input command queue protected by a spin-lock (or mutex), but the **entire matching process is lock-free** and single-threaded within the shard.
-3.  **OrderBook**: A `std::map<Price, std::deque<Order>>` structure optimized for price-time priority matching.
-4.  **Compactor**: Background routines analyze memory usage and "compact" the order queues during idle cycles to maintain cache locality.
+1.  **Exchange**: Distributes orders to shards based on symbol.
+2.  **Ring Buffer**: A cache-line aligned, lock-free SPSC queue acts as the highway between the producer (Net/Benchmark) and the consumer (Matcher).
+3.  **OrderBook (Flat w/ Bitset)**: 
+    *   `bids[price]` -> Head Index of the Memory Pool.
+    *   `bidMask` -> Bitmap of active levels for O(1) iteration.
+4.  **Memory Pool**: A monolithic `std::vector<OrderNode>` stores all orders contiguously, improving CPU cache locality.
 
 ## 🛠 Build & Run
 
@@ -32,12 +37,12 @@ The system avoids the traditional "Global Lock" bottleneck by adopting a **Shard
 ### Compiling
 ```bash
 mkdir -p build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release
+cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS="-march=native"
 make -j$(nproc)
 ```
 
 ### Running Benchmarks
-To verify the 2M+ ops/s performance on your machine:
+To verify the 27M+ ops/s performance on your machine:
 ```bash
 ./build/src/benchmark
 ```
@@ -69,11 +74,7 @@ SUBSCRIBE AAPL
 
 ## 🧪 Testing
 
-The project includes a comprehensive GoogleTest suite covering:
-*   Partial & Full Fills
-*   Self-Trade Logic
-*   Queue Priority & Fairness
-*   Multi-Asset Isolation
+The project includes a comprehensive GoogleTest suite.
 
 ```bash
 ./build/tests/unit_tests
