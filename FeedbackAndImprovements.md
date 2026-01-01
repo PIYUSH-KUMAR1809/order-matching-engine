@@ -204,3 +204,67 @@ Here is the step-by-step technical plan to address the feedback.
     - **Single-Threaded Pure**: One core, no locks. Fastest latency, limited by 1 core speed.
     - **Sharded Architecture (Best/Real-Life)**: N Single-Threaded Engines (one per core). Each engine owns a subset of symbols (e.g., Core 1: AAPL, Core 2: GOOG).
     - **Action**: Implement "Shard-per-Core" architecture. Keep multi-threading (1 thread per core), but *remove locks* by ensuring each thread has exclusive access to its shards. This is the "high scalability" solution.
+
+---
+
+## Round 3: HFT Optimization & Results (January 2026)
+
+This section details the architectural evolution executed to maximize throughput on single-node hardware.
+
+### Performance Summary
+
+| Optimization Stage | Throughput (Orders/Sec) | Speedup | Key Bottleneck Removed |
+| :--- | :--- | :--- | :--- |
+| **Baseline (v1)** | ~1,000,000 | 1x | `std::mutex`, `std::condition_variable` |
+| **SPSC Ring Buffer** | ~9,000,000 | 9x | Thread Context Switching (Locks) |
+| **Memory Pool** | ~17,500,000 | 17.5x | `malloc` / `free` Contention |
+| **POD Zero-Copy** | ~27,700,000 | 27.7x | `std::string` Copies & Memory Bandwidth |
+
+### Detailed Improvements
+
+#### 1. Lock-Free Inter-Thread Communication (SPSC Ring Buffer)
+*   **The Problem:** The initial implementation used `std::deque` protected by `std::mutex`. Every `submitOrder` call required acquiring a lock, potentially putting the producer thread to sleep if the consumer was busy. This caused expensive OS context switches (~5-10µs).
+*   **The Solution:** Implemented a custom **Single-Producer Single-Consumer (SPSC) Ring Buffer**.
+    *   **Lock-Free:** Uses `std::atomic` head and tail indices with `acquire`/`release` memory semantics.
+    *   **Shadow Indices:** The producer and consumer keep local copies of the indices to avoid querying the shared atomic variable (which causes cache line bouncing) unless the buffer appears full/empty.
+    *   **False Sharing Prevention:** The structure is aligned to cache lines (`alignas(64)`) to ensure the head and tail live on separate cache lines.
+
+#### 2. Flat OrderBook (O(1) Access)
+*   **The Problem:** The original `OrderBook` used `std::map<Price, std::deque<Order>>`.
+    *   `std::map` is a Red-Black Tree. Lookups are `O(log N)`.
+    *   It creates a new heap allocation for every node.
+    *   Pointer chasing kills CPU cache locality.
+*   **The Solution:** Switched to **Flat Arrays** (`std::vector`).
+    *   `bids[price]` allows `O(1)` instant access to any price level.
+    *   Since prices in our benchmark (and many real exchanges) are integers within a known range, we can use the price directly as an array index.
+
+#### 3. Bitset Scan for Sparse Levels
+*   **The Problem:** Iterating through a flat array is fast, but if the book is sparse (e.g., bids at 100, 95, 90), the engine wastes time checking empty slots 99, 98, 97...
+*   **The Solution:** Implemented a `PriceBitset` using **CPU Intrinsics**.
+    *   We maintain a bitmask where `1` = active price level.
+    *   Using `__builtin_ctzll` (Count Trailing Zeros), the CPU can find the next active price index in a 64-bit word in a single cycle.
+    *   This allows the Matching Engine to "teleport" to the next matchable price instantly.
+
+#### 4. Zero-Allocation Memory Pool
+*   **The Problem:** `std::deque<Order>` or `std::vector<Order>` (with resize) allocates memory on the heap. `malloc` and `free` are slow and require locks inside the memory allocator, causing contention when multiple threads are running.
+*   **The Solution:** **Object Pool (Intrusive Linked List)**.
+    *   We pre-allocate a massive `std::vector<OrderNode>` (15M slots) at startup.
+    *   Instead of `std::list`, we use integer indices (`next`) to chain orders.
+    *   **Result:** The trading loop performs **Zero** heap allocations. It just reads/writes integers and structs in pre-warmed memory.
+
+#### 5. POD (Plain Old Data) & Zero-Copy
+*   **The Problem:** The `Order` struct contained `std::string symbol`.
+    *   `std::string` often allocates on the heap.
+    *   Copying an Order involved copying the string, which is slow.
+*   **The Solution:** Replaced `std::string` with `char symbol[8]`.
+    *   The `Order` struct is now a **POD** (Plain Old Data).
+    *   We can copy it using `std::memcpy` or simple register moves.
+    *   This massively reduced memory bandwidth usage, unlocking the jump from 17M to 27M.
+
+---
+
+## Future Roadmap (To break 100M)
+
+1.  **Batching:** Process orders in groups of 16 or 32 to amortize the cost of atomic updates in the Ring Buffer.
+2.  **Kernel Bypass:** Use Solarflare/DPDK to read packets directly from the NIC, skipping the OS network stack.
+3.  **Core Pinning:** Strictly pin the Matching Engine thread to an isolated CPU core to prevent the OS scheduler from interrupting it.

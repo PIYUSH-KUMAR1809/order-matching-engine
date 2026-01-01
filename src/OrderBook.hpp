@@ -1,62 +1,135 @@
 #pragma once
 
-#include <deque>
-#include <map>
+#include <cstdint>
+#include <limits>
 #include <vector>
 
 #include "Order.hpp"
 
 struct Trade {
-  std::string symbol;
+  char symbol[8];
   Price price;
   Quantity quantity;
   OrderId makerOrderId;
   OrderId takerOrderId;
 };
 
+class PriceBitset {
+  std::vector<uint64_t> data_;
+  size_t size_;
+
+ public:
+  explicit PriceBitset(size_t size) : data_((size + 63) / 64, 0), size_(size) {}
+  void set(size_t index) {
+    if (index < size_) data_[index / 64] |= (1ULL << (index % 64));
+  }
+  void clear(size_t index) {
+    if (index < size_) data_[index / 64] &= ~(1ULL << (index % 64));
+  }
+  size_t findFirstSet(size_t start) const {
+    if (start >= size_) return size_;
+    size_t idx = start / 64;
+    size_t bit = start % 64;
+    uint64_t word = data_[idx] & (~0ULL << bit);
+    if (word != 0) return idx * 64 + __builtin_ctzll(word);
+    for (idx++; idx < data_.size(); idx++)
+      if (data_[idx] != 0) return idx * 64 + __builtin_ctzll(data_[idx]);
+    return size_;
+  }
+  size_t findFirstSetDown(size_t start) const {
+    if (start >= size_) start = size_ - 1;
+    size_t idx = start / 64;
+    int bit = start % 64;
+    uint64_t mask = (bit == 63) ? ~0ULL : ((1ULL << (bit + 1)) - 1);
+    uint64_t word = data_[idx] & mask;
+    if (word != 0) return idx * 64 + (63 - __builtin_clzll(word));
+    for (size_t i = idx; i-- > 0;)
+      if (data_[i] != 0) return i * 64 + (63 - __builtin_clzll(data_[i]));
+    return size_;
+  }
+};
+
+struct OrderNode {
+  Order order;
+  int32_t next = -1;
+  bool active = true;
+};
+
 class OrderBook {
  public:
-  std::vector<Trade> addOrder(const Order &order);
+  static constexpr size_t MAX_PRICE = 200000;
+  static constexpr size_t INITIAL_POOL_SIZE = 15000000;
+
+  OrderBook()
+      : bidHeads(MAX_PRICE, -1),
+        askHeads(MAX_PRICE, -1),
+        bidTails(MAX_PRICE, -1),
+        askTails(MAX_PRICE, -1),
+        bidMask(MAX_PRICE),
+        askMask(MAX_PRICE) {
+    orderPool.reserve(INITIAL_POOL_SIZE);
+    orderIndex.reserve(INITIAL_POOL_SIZE);
+  }
+
+  std::vector<Trade> addOrder(const Order& order);
   void cancelOrder(OrderId orderId);
 
+  int32_t getOrderHead(Price p, OrderSide side) const {
+    if (side == OrderSide::Buy) return bidHeads[p];
+    return askHeads[p];
+  }
+
+  OrderNode& getNode(int32_t idx) { return orderPool[idx]; }
+
+  Price getBestBid() const { return bestBid; }
+  Price getBestAsk() const { return bestAsk; }
+
+  Price getNextBid(Price start) const {
+    size_t p = bidMask.findFirstSetDown(start);
+    return (p == MAX_PRICE) ? 0 : (Price)p;
+  }
+
+  Price getNextAsk(Price start) const {
+    size_t p = askMask.findFirstSet(start);
+    return (p == MAX_PRICE) ? MAX_PRICE : (Price)p;
+  }
+
+  void resetLevel(Price p, OrderSide side) {
+    if (side == OrderSide::Buy) {
+      bidHeads[p] = -1;
+      bidTails[p] = -1;
+      bidMask.clear(p);
+    } else {
+      askHeads[p] = -1;
+      askTails[p] = -1;
+      askMask.clear(p);
+    }
+  }
+
   void printBook() const;
-
-  const std::map<Price, std::deque<Order>, std::greater<Price>> &getBids()
-      const {
-    return bids;
-  }
-  const std::map<Price, std::deque<Order>, std::less<Price>> &getAsks() const {
-    return asks;
-  }
-
-  std::map<Price, std::deque<Order>, std::greater<Price>> &getBidsInternal() {
-    return bids;
-  }
-  std::map<Price, std::deque<Order>, std::less<Price>> &getAsksInternal() {
-    return asks;
-  }
-
-  // Internal function to add order to the order book
-  void addOrderInternal(const Order &order);
-
-  // Internal function to soft delete the order
-  void removeOrderInternal(OrderId orderId);
-
-  // Removing the entry from vector by setting pointer to null
-  void removeIndexInternal(OrderId orderId);
-
-  // Called during downtime to remove the soft deleted orders
   void compact();
 
+  void updateBestBid() {
+    size_t p = bidMask.findFirstSetDown(bestBid);
+    bestBid = (p == MAX_PRICE) ? 0 : p;
+  }
+  void updateBestAsk() {
+    size_t p = askMask.findFirstSet(bestAsk);
+    bestAsk = (p == MAX_PRICE) ? MAX_PRICE : p;
+  }
+
  private:
-  struct OrderLocation {
-    Price price;
-    OrderSide side;
-    Order *orderPtr;
-  };
+  std::vector<int32_t> bidHeads;
+  std::vector<int32_t> askHeads;
+  std::vector<int32_t> bidTails;
+  std::vector<int32_t> askTails;
 
-  std::map<Price, std::deque<Order>, std::greater<Price>> bids;
-  std::map<Price, std::deque<Order>, std::less<Price>> asks;
+  PriceBitset bidMask;
+  PriceBitset askMask;
 
-  std::vector<OrderLocation> orderIndex;
+  Price bestBid = 0;
+  Price bestAsk = std::numeric_limits<Price>::max();
+
+  std::vector<OrderNode> orderPool;
+  std::vector<int32_t> orderIndex;
 };

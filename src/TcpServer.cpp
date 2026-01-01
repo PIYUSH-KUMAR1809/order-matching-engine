@@ -15,7 +15,7 @@ TcpServer::TcpServer(Exchange &engine, int port)
     : engine_(engine), port_(port), serverSocket_(-1), running_(false) {
   engine_.setTradeCallback([this](const std::vector<Trade> &trades) {
     for (const auto &trade : trades) {
-      if (!trade.symbol.empty()) {
+      if (trade.symbol[0] != '\0') {
         broadcastTrade(trade.symbol, trade.price, trade.quantity);
       }
     }
@@ -158,17 +158,48 @@ std::string TcpServer::processRequest(int clientSocket,
 
     std::stringstream response;
     response << "BOOK " << symbol << " BIDS";
-    for (const auto &pair : book->getBids()) {
-      for (const auto &order : pair.second) {
-        response << " " << order.price << " " << order.quantity;
+
+    Price p = book->getBestBid();
+    int levels = 0;
+    while (p > 0 && levels < 20) {
+      int32_t curr =
+          const_cast<OrderBook *>(book)->getOrderHead(p, OrderSide::Buy);
+      if (curr != -1) {
+        bool hasActive = false;
+        while (curr != -1) {
+          auto &node = const_cast<OrderBook *>(book)->getNode(curr);
+          if (node.active) {
+            response << " " << node.order.price << " " << node.order.quantity;
+            hasActive = true;
+          }
+          curr = node.next;
+        }
+        if (hasActive) levels++;
       }
+      p--;
     }
+
     response << " ASKS";
-    for (const auto &pair : book->getAsks()) {
-      for (const auto &order : pair.second) {
-        response << " " << order.price << " " << order.quantity;
+    p = book->getBestAsk();
+    levels = 0;
+    while (p < OrderBook::MAX_PRICE && levels < 20) {
+      int32_t curr =
+          const_cast<OrderBook *>(book)->getOrderHead(p, OrderSide::Sell);
+      if (curr != -1) {
+        bool hasActive = false;
+        while (curr != -1) {
+          auto &node = const_cast<OrderBook *>(book)->getNode(curr);
+          if (node.active) {
+            response << " " << node.order.price << " " << node.order.quantity;
+            hasActive = true;
+          }
+          curr = node.next;
+        }
+        if (hasActive) levels++;
       }
+      p++;
     }
+
     response << "\n";
     return response.str();
   }

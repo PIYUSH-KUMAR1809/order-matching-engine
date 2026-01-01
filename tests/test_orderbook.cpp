@@ -41,6 +41,33 @@ class ExchangeLogicTest : public ::testing::Test {
   }
 };
 
+// Helper to count active nodes in the linked list
+int countActiveOrdersAt(const OrderBook* book, Price price, OrderSide side) {
+  auto* nonConstBook = const_cast<OrderBook*>(
+      book);  // Hack: getNode is non-const in previous step
+  int32_t curr = book->getOrderHead(price, side);
+  int count = 0;
+  while (curr != -1) {
+    if (nonConstBook->getNode(curr).active) {
+      count++;
+    }
+    curr = nonConstBook->getNode(curr).next;
+  }
+  return count;
+}
+
+// Helper to get first active order
+OrderNode* getFirstActive(const OrderBook* book, Price price, OrderSide side) {
+  auto* nonConstBook = const_cast<OrderBook*>(book);
+  int32_t curr = book->getOrderHead(price, side);
+  while (curr != -1) {
+    OrderNode& node = nonConstBook->getNode(curr);
+    if (node.active) return &node;
+    curr = node.next;
+  }
+  return nullptr;
+}
+
 TEST_F(ExchangeLogicTest, AddOrder) {
   engine.submitOrder(
       Order(1, 0, "TEST", OrderSide::Sell, OrderType::Limit, 10000, 10));
@@ -49,9 +76,13 @@ TEST_F(ExchangeLogicTest, AddOrder) {
 
   const OrderBook* book = engine.getOrderBook("TEST");
   ASSERT_NE(book, nullptr);
-  auto& asks = book->getAsks();
-  ASSERT_EQ(asks.size(), 1);
-  ASSERT_EQ(asks.begin()->second.front().quantity, 10);
+
+  // Verify order is in the linked list
+  ASSERT_EQ(countActiveOrdersAt(book, 10000, OrderSide::Sell), 1);
+
+  auto* node = getFirstActive(book, 10000, OrderSide::Sell);
+  ASSERT_NE(node, nullptr);
+  ASSERT_EQ(node->order.quantity, 10);
 }
 
 TEST_F(ExchangeLogicTest, MatchFull) {
@@ -66,8 +97,10 @@ TEST_F(ExchangeLogicTest, MatchFull) {
 
   const OrderBook* book = engine.getOrderBook("TEST");
   ASSERT_NE(book, nullptr);
-  ASSERT_TRUE(book->getAsks().empty());
-  ASSERT_TRUE(book->getBids().empty());
+
+  // Should be empty (active = false)
+  ASSERT_EQ(countActiveOrdersAt(book, 10000, OrderSide::Sell), 0);
+  ASSERT_EQ(countActiveOrdersAt(book, 10000, OrderSide::Buy), 0);
 }
 
 TEST_F(ExchangeLogicTest, MatchPartial) {
@@ -82,17 +115,13 @@ TEST_F(ExchangeLogicTest, MatchPartial) {
 
   const OrderBook* book = engine.getOrderBook("TEST");
   ASSERT_NE(book, nullptr);
-  auto& asks = book->getAsks();
-  bool found = false;
-  if (!asks.empty()) {
-    for (const auto& order : asks.at(10000)) {
-      if (order.id == 1 && order.active) {
-        ASSERT_EQ(order.quantity, 10);
-        found = true;
-      }
-    }
-  }
-  ASSERT_TRUE(found);
+
+  // Sell order should remain with 10 qty
+  ASSERT_EQ(countActiveOrdersAt(book, 10000, OrderSide::Sell), 1);
+  auto* node = getFirstActive(book, 10000, OrderSide::Sell);
+  ASSERT_NE(node, nullptr);
+  ASSERT_EQ(node->order.quantity, 10);
+  ASSERT_EQ(node->order.id, 1);
 }
 
 TEST_F(ExchangeLogicTest, NoMatch) {
@@ -108,8 +137,9 @@ TEST_F(ExchangeLogicTest, NoMatch) {
 
   const OrderBook* book = engine.getOrderBook("TEST");
   ASSERT_NE(book, nullptr);
-  ASSERT_FALSE(book->getAsks().empty());
-  ASSERT_FALSE(book->getBids().empty());
+
+  ASSERT_EQ(countActiveOrdersAt(book, 10100, OrderSide::Sell), 1);
+  ASSERT_EQ(countActiveOrdersAt(book, 10000, OrderSide::Buy), 1);
 }
 
 TEST_F(ExchangeLogicTest, CancelOrder) {
@@ -125,13 +155,7 @@ TEST_F(ExchangeLogicTest, CancelOrder) {
   const OrderBook* book = engine.getOrderBook("TEST");
   ASSERT_NE(book, nullptr);
 
-  int activeCount = 0;
-  for (const auto& pair : book->getAsks()) {
-    for (const auto& order : pair.second) {
-      if (order.active) activeCount++;
-    }
-  }
-  ASSERT_EQ(activeCount, 0);
+  ASSERT_EQ(countActiveOrdersAt(book, 10000, OrderSide::Sell), 0);
 }
 
 TEST_F(ExchangeLogicTest, MarketOrderFullFill) {
@@ -179,5 +203,5 @@ TEST(ExchangeTest, MultiAssetIsolation) {
   ASSERT_EQ(captured[0].quantity, 50);
   ASSERT_EQ(captured[0].makerOrderId, 1);
   ASSERT_EQ(captured[0].takerOrderId, 3);
-  ASSERT_EQ(captured[0].symbol, "AAPL");
+  ASSERT_STREQ(captured[0].symbol, "AAPL");  // Using STREQ for char[]
 }
