@@ -19,10 +19,13 @@ Exchange::Exchange(int numWorkers) {
   }
 }
 
-Exchange::~Exchange() {
+Exchange::~Exchange() { stop(); }
+
+void Exchange::stop() {
   for (auto &shard : shards_) {
     shard->queue.push_block({Command::Stop, {}, 0, ""});
   }
+  workers_.clear();
 }
 
 size_t Exchange::getShardId(std::string_view symbol) const {

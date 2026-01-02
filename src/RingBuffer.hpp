@@ -1,12 +1,15 @@
 #pragma once
 
 #include <atomic>
+#include <bit>
 #include <cassert>
 #include <cstddef>
 #include <new>
 
 #ifdef __cpp_lib_hardware_interference_size
 using std::hardware_destructive_interference_size;
+#else
+constexpr size_t hardware_destructive_interference_size = 64;
 #endif
 
 template <typename T>
@@ -14,15 +17,19 @@ class RingBuffer {
  public:
   explicit RingBuffer(size_t capacity) {
     if (capacity < 2) capacity = 2;
-    size_t cap = 1;
-    while (cap < capacity) cap *= 2;
-    capacity_ = cap;
+    capacity_ = std::bit_ceil(capacity);
     mask_ = capacity_ - 1;
 
-    buffer_ = new T[capacity_];
+    // Use aligned allocation to ensure the buffer starts on a cache line
+    // boundary preventing false sharing with preceding data.
+    buffer_ = new (std::align_val_t(hardware_destructive_interference_size))
+        T[capacity_];
   }
 
-  ~RingBuffer() { delete[] buffer_; }
+  ~RingBuffer() {
+    ::operator delete[](
+        buffer_, std::align_val_t(hardware_destructive_interference_size));
+  }
 
   RingBuffer(const RingBuffer&) = delete;
   RingBuffer& operator=(const RingBuffer&) = delete;

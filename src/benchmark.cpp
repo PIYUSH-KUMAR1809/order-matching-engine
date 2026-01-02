@@ -173,7 +173,7 @@ int main(int argc, char *argv[]) {
   durations.reserve(10);
 
   for (int run = 0; run < 10; ++run) {
-    auto start = std::chrono::high_resolution_clock::now();
+    auto start = std::chrono::steady_clock::now();
 
     {
       Exchange engine(numThreads);
@@ -205,7 +205,7 @@ int main(int argc, char *argv[]) {
       }
     }
 
-    auto end = std::chrono::high_resolution_clock::now();
+    auto end = std::chrono::steady_clock::now();
     std::chrono::duration<double> diff = end - start;
     long long tput = (long long)(totalOrders / diff.count());
 
