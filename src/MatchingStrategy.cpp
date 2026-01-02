@@ -31,8 +31,8 @@ void StandardMatchingStrategy::match(OrderBook& book, const Order& order,
 
         Quantity quantity = std::min(incoming.quantity, askNode.order.quantity);
 
-        Trade t;
-        std::memcpy(t.symbol, incoming.symbol, 8);
+        Trade t{};
+        std::memcpy(t.symbol.data(), incoming.symbol, 8);
         t.price = askNode.order.price;
         t.quantity = quantity;
         t.makerOrderId = askNode.order.id;
@@ -81,8 +81,8 @@ void StandardMatchingStrategy::match(OrderBook& book, const Order& order,
 
         Quantity quantity = std::min(incoming.quantity, bidNode.order.quantity);
 
-        Trade t;
-        std::memcpy(t.symbol, incoming.symbol, 8);
+        Trade t{};
+        std::memcpy(t.symbol.data(), incoming.symbol, 8);
         t.price = bidNode.order.price;
         t.quantity = quantity;
         t.makerOrderId = bidNode.order.id;

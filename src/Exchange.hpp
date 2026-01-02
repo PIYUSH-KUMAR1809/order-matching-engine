@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <functional>
 #include <memory>
 #include <string>
@@ -8,6 +9,7 @@
 #include <vector>
 
 #include "MatchingStrategy.hpp"
+#include "OrderBook.hpp"
 #include "RingBuffer.hpp"
 
 class Exchange {
@@ -17,15 +19,33 @@ class Exchange {
   Exchange(int numWorkers = 0);
   ~Exchange();
 
-  void submitOrder(const Order &order, int shardHint = -1);
+  Exchange(const Exchange &) = delete;
+  Exchange &operator=(const Exchange &) = delete;
+  Exchange(Exchange &&) = delete;
+  Exchange &operator=(Exchange &&) = delete;
+
+  struct Command {
+    enum Type : uint8_t { Add, Cancel, Stop } type = Add;
+    Order order = {};
+    OrderId cancelId = 0;
+    std::array<char, 8> symbol = {};
+  };
+
+  void submitOrder(const Order &order, int shardHint = -1,
+                   std::chrono::nanoseconds *wait_duration = nullptr);
   void cancelOrder(const std::string &symbol, OrderId orderId);
   void stop();
+  void flush();
+
+  void registerSymbol(const std::string &symbol, int shardId);
 
   void setTradeCallback(TradeCallback cb);
 
   void printOrderBook(const std::string &symbol) const;
   void printAllOrderBooks() const;
   const OrderBook *getOrderBook(const std::string &symbol) const;
+
+  static void pinThread(int coreId);
 
  private:
   struct StringHash {
@@ -39,13 +59,6 @@ class Exchange {
     size_t operator()(const std::string &txt) const {
       return std::hash<std::string>{}(txt);
     }
-  };
-
-  struct Command {
-    enum Type { Add, Cancel, Stop } type;
-    Order order;
-    OrderId cancelId;
-    char symbol[8];
   };
 
   struct Shard {
@@ -63,4 +76,6 @@ class Exchange {
   std::vector<std::unique_ptr<Shard>> shards_;
   std::vector<std::jthread> workers_;
   TradeCallback onTrade_;
+  std::unordered_map<std::string, size_t, StringHash, std::equal_to<>>
+      symbolShardMap_;
 };

@@ -16,7 +16,8 @@ TcpServer::TcpServer(Exchange &engine, int port)
   engine_.setTradeCallback([this](const std::vector<Trade> &trades) {
     for (const auto &trade : trades) {
       if (trade.symbol[0] != '\0') {
-        broadcastTrade(trade.symbol, trade.price, trade.quantity);
+        broadcastTrade(std::string(trade.symbol.data()), trade.price,
+                       trade.quantity);
       }
     }
   });
@@ -27,28 +28,28 @@ TcpServer::~TcpServer() { stop(); }
 bool TcpServer::start() {
   serverSocket_ = socket(AF_INET, SOCK_STREAM, 0);
   if (serverSocket_ < 0) {
-    std::cerr << "Error creating socket" << std::endl;
+    std::cerr << "Error creating socket\n";
     return false;
   }
 
-  sockaddr_in serverAddr;
+  sockaddr_in serverAddr{};
   serverAddr.sin_family = AF_INET;
   serverAddr.sin_addr.s_addr = INADDR_ANY;
   serverAddr.sin_port = htons(port_);
 
-  if (bind(serverSocket_, (struct sockaddr *)&serverAddr, sizeof(serverAddr)) <
-      0) {
-    std::cerr << "Error binding socket" << std::endl;
+  if (bind(serverSocket_, reinterpret_cast<struct sockaddr *>(&serverAddr),
+           sizeof(serverAddr)) < 0) {
+    std::cerr << "Error binding socket\n";
     return false;
   }
 
   if (listen(serverSocket_, 10) < 0) {
-    std::cerr << "Error listening" << std::endl;
+    std::cerr << "Error listening\n";
     return false;
   }
 
   running_ = true;
-  std::cout << "Server started on port " << port_ << std::endl;
+  std::cout << "Server started on port " << port_ << "\n";
   acceptThread_ = std::jthread(&TcpServer::acceptLoop, this);
   return true;
 }
@@ -63,35 +64,36 @@ void TcpServer::stop() {
 
 void TcpServer::acceptLoop() {
   while (running_) {
-    sockaddr_in clientAddr;
+    sockaddr_in clientAddr{};
     socklen_t clientLen = sizeof(clientAddr);
     int clientSocket =
-        accept(serverSocket_, (struct sockaddr *)&clientAddr, &clientLen);
+        accept(serverSocket_, reinterpret_cast<struct sockaddr *>(&clientAddr),
+               &clientLen);
 
     if (clientSocket < 0) {
       if (running_) {
-        std::cerr << "Error accepting connection" << std::endl;
+        std::cerr << "Error accepting connection\n";
       }
       continue;
     }
 
     std::cout << "New connection from " << inet_ntoa(clientAddr.sin_addr)
-              << std::endl;
+              << "\n";
     clientThreads_.emplace_back(&TcpServer::handleClient, this, clientSocket);
   }
 }
 
 void TcpServer::handleClient(int clientSocket) {
-  char buffer[1024];
+  std::array<char, 1024> buffer{};
   while (running_) {
-    memset(buffer, 0, sizeof(buffer));
-    ssize_t bytesRead = read(clientSocket, buffer, sizeof(buffer) - 1);
+    buffer.fill(0);
+    ssize_t bytesRead = read(clientSocket, buffer.data(), buffer.size() - 1);
 
     if (bytesRead <= 0) {
       break;
     }
 
-    std::string request(buffer);
+    std::string request(buffer.data());
     std::string response = processRequest(clientSocket, request);
     write(clientSocket, response.c_str(), response.length());
   }
@@ -107,8 +109,8 @@ std::string TcpServer::processRequest(int clientSocket,
 
   if (command == "BUY" || command == "SELL") {
     std::string symbol;
-    Quantity quantity;
-    Price price;
+    Quantity quantity = 0;
+    Price price = 0;
     ss >> symbol >> quantity >> price;
 
     OrderSide side = (command == "BUY") ? OrderSide::Buy : OrderSide::Sell;
@@ -131,7 +133,7 @@ std::string TcpServer::processRequest(int clientSocket,
 
   } else if (command == "CANCEL") {
     std::string symbol;
-    OrderId id;
+    OrderId id = 0;
     ss >> symbol >> id;
     engine_.cancelOrder(symbol, id);
     return "CANCEL_REQUEST_SENT\n";
@@ -162,12 +164,11 @@ std::string TcpServer::processRequest(int clientSocket,
     Price p = book->getBestBid();
     int levels = 0;
     while (p > 0 && levels < 20) {
-      int32_t curr =
-          const_cast<OrderBook *>(book)->getOrderHead(p, OrderSide::Buy);
+      int32_t curr = book->getOrderHead(p, OrderSide::Buy);
       if (curr != -1) {
         bool hasActive = false;
         while (curr != -1) {
-          auto &node = const_cast<OrderBook *>(book)->getNode(curr);
+          auto &node = book->getNode(curr);
           if (node.active) {
             response << " " << node.order.price << " " << node.order.quantity;
             hasActive = true;
@@ -183,12 +184,11 @@ std::string TcpServer::processRequest(int clientSocket,
     p = book->getBestAsk();
     levels = 0;
     while (p < OrderBook::MAX_PRICE && levels < 20) {
-      int32_t curr =
-          const_cast<OrderBook *>(book)->getOrderHead(p, OrderSide::Sell);
+      int32_t curr = book->getOrderHead(p, OrderSide::Sell);
       if (curr != -1) {
         bool hasActive = false;
         while (curr != -1) {
-          auto &node = const_cast<OrderBook *>(book)->getNode(curr);
+          auto &node = book->getNode(curr);
           if (node.active) {
             response << " " << node.order.price << " " << node.order.quantity;
             hasActive = true;

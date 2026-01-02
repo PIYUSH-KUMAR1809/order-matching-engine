@@ -7,7 +7,7 @@
 #include "Order.hpp"
 
 struct Trade {
-  char symbol[8];
+  std::array<char, 8> symbol;
   Price price;
   Quantity quantity;
   OrderId makerOrderId;
@@ -39,7 +39,7 @@ class PriceBitset {
   size_t findFirstSetDown(size_t start) const {
     if (start >= size_) start = size_ - 1;
     size_t idx = start / 64;
-    int bit = start % 64;
+    size_t bit = start % 64;
     uint64_t mask = (bit == 63) ? ~0ULL : ((1ULL << (bit + 1)) - 1);
     uint64_t word = data_[idx] & mask;
     if (word != 0) return idx * 64 + (63 - __builtin_clzll(word));
@@ -96,18 +96,19 @@ class OrderBook {
   }
 
   OrderNode& getNode(int32_t idx) { return orderPool[idx]; }
+  const OrderNode& getNode(int32_t idx) const { return orderPool[idx]; }
 
   Price getBestBid() const { return bestBid; }
   Price getBestAsk() const { return bestAsk; }
 
   Price getNextBid(Price start) const {
     size_t p = bidMask.findFirstSetDown(start);
-    return (p == MAX_PRICE) ? 0 : (Price)p;
+    return (p == MAX_PRICE) ? 0 : static_cast<Price>(p);
   }
 
   Price getNextAsk(Price start) const {
     size_t p = askMask.findFirstSet(start);
-    return (p == MAX_PRICE) ? MAX_PRICE : (Price)p;
+    return (p == MAX_PRICE) ? MAX_PRICE : static_cast<Price>(p);
   }
 
   void resetLevel(Price p, OrderSide side) {
@@ -127,11 +128,11 @@ class OrderBook {
 
   void updateBestBid() {
     size_t p = bidMask.findFirstSetDown(bestBid);
-    bestBid = (p == MAX_PRICE) ? 0 : p;
+    bestBid = (p == MAX_PRICE) ? 0 : static_cast<Price>(p);
   }
   void updateBestAsk() {
     size_t p = askMask.findFirstSet(bestAsk);
-    bestAsk = (p == MAX_PRICE) ? MAX_PRICE : p;
+    bestAsk = (p == MAX_PRICE) ? MAX_PRICE : static_cast<Price>(p);
   }
 
  private:

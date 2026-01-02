@@ -360,3 +360,11 @@ Between Round 3 and Round 4, throughput exploded from **~27M** to **~234M** orde
     - **Feedback**: Use `clang-tidy` and `perf`.
 
 
+
+### Efficiency Stats (Back-of-Envelope)
+- **Throughput**: ~45 Million ops/sec
+- **Hardware**: Macbook Pro M1 Pro (Performance Core freq ~3.2 GHz)
+- **Cores Utilized**: 5 Cores
+- **Total Cycles Consumed**: $3.2 \times 10^9 \text{ cycles/sec/core} \times 5 \text{ cores} \approx 16 \times 10^9 \text{ cycles/sec}$
+- **Cycles per Op**: $\frac{16 \times 10^9}{45 \times 10^6} \approx 355 \text{ cycles/op}$
+- **Conclusion**: The amortized cost of 355 cycles per order submission suggests reasonably low overhead, but there is headroom for optimization compared to sub-100 cycle HFT standards.
