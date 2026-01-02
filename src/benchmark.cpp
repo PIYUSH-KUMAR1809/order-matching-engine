@@ -10,20 +10,37 @@
 
 #include "Exchange.hpp"
 
-std::unique_ptr<std::atomic<int64_t>[]> submissionTimes;
-std::vector<long long> latencies;
-std::atomic<size_t> latencyIndex{0};
-bool measureLatency = false;
+namespace {
+static std::unique_ptr<std::atomic<int64_t>[]> submissionTimes;
+static std::vector<long long> latencies;
+static std::atomic<size_t> latencyIndex{0};
+static bool measureLatency = false;
+
+void pinThreadWithOffset(int threadId) {
+  int offset = static_cast<int>(std::thread::hardware_concurrency()) / 2;
+  Exchange::pinThread(threadId + offset);
+}
 
 void benchmarkWorker(Exchange &engine, const std::vector<Order> &orders,
-                     int threadId) {
+                     int threadId,
+                     std::chrono::nanoseconds *totalWait = nullptr) {
+  pinThreadWithOffset(threadId);
+
+  std::chrono::nanoseconds localWait{0};
+
   for (const auto &order : orders) {
     if (measureLatency) {
       submissionTimes[order.id].store(
           std::chrono::steady_clock::now().time_since_epoch().count(),
           std::memory_order_relaxed);
     }
-    engine.submitOrder(order, threadId);
+    engine.submitOrder(order, threadId, totalWait ? &localWait : nullptr);
+  }
+
+  engine.flush();
+
+  if (totalWait) {
+    *totalWait = localWait;
   }
 }
 
@@ -37,7 +54,8 @@ void runVerification() {
   std::atomic<Quantity> totalVolume{0};
 
   engine.setTradeCallback([&](const std::vector<Trade> &trades) {
-    totalTrades.fetch_add(trades.size(), std::memory_order_relaxed);
+    totalTrades.fetch_add(static_cast<long long>(trades.size()),
+                          std::memory_order_relaxed);
     for (const auto &t : trades) {
       totalVolume.fetch_add(t.quantity, std::memory_order_relaxed);
     }
@@ -47,7 +65,8 @@ void runVerification() {
   const Price PRICE = 100;
   const std::string SYMBOL = "VERIFY";
 
-  std::vector<Order> buyOrders, sellOrders;
+  std::vector<Order> buyOrders;
+  std::vector<Order> sellOrders;
   buyOrders.reserve(ORDER_COUNT);
   sellOrders.reserve(ORDER_COUNT);
 
@@ -58,35 +77,35 @@ void runVerification() {
                             OrderSide::Sell, OrderType::Limit, PRICE, 1);
   }
 
-  std::cout << "Submitting " << ORDER_COUNT << " BUY orders..." << std::endl;
-  benchmarkWorker(engine, buyOrders, 0);  // Thread 0
+  std::cout << "Submitting " << ORDER_COUNT << " BUY orders...\n";
+  benchmarkWorker(engine, buyOrders, 0);
 
   std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
-  std::cout << "Submitting " << ORDER_COUNT << " SELL orders..." << std::endl;
+  std::cout << "Submitting " << ORDER_COUNT << " SELL orders...\n";
   benchmarkWorker(engine, sellOrders, 0);
-  std::cout << "Waiting for matching..." << std::endl;
+  std::cout << "Waiting for matching...\n";
   std::this_thread::sleep_for(std::chrono::seconds(2));
 
   long long trades = totalTrades.load();
   long long vol = totalVolume.load();
 
-  std::cout << "Verification Results:" << std::endl;
-  std::cout << "  Expected Trades: " << ORDER_COUNT << std::endl;
-  std::cout << "  Actual Trades:   " << trades << std::endl;
-  std::cout << "  Expected Volume: " << ORDER_COUNT << std::endl;
-  std::cout << "  Actual Volume:   " << vol << std::endl;
+  std::cout << "Verification Results:\n";
+  std::cout << "  Expected Trades: " << ORDER_COUNT << "\n";
+  std::cout << "  Actual Trades:   " << trades << "\n";
+  std::cout << "  Expected Volume: " << ORDER_COUNT << "\n";
+  std::cout << "  Actual Volume:   " << vol << "\n";
 
   if (trades == ORDER_COUNT && vol == ORDER_COUNT) {
-    std::cout << "[PASS] Verification Successful!" << std::endl;
+    std::cout << "[PASS] Verification Successful!\n";
   } else {
-    std::cout << "[FAIL] Verification Failed!" << std::endl;
+    std::cout << "[FAIL] Verification Failed!\n";
     exit(1);
   }
 }
+}  // namespace
 
 int main(int argc, char *argv[]) {
-  // Check for latency flag
   bool verifyMode = false;
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
@@ -103,18 +122,18 @@ int main(int argc, char *argv[]) {
     return 0;
   }
 
-  int totalCores = std::thread::hardware_concurrency();
+  int totalCores = static_cast<int>(std::thread::hardware_concurrency());
   int numThreads = totalCores / 2;
   if (numThreads < 1) numThreads = 1;
 
   long long ordersPerThread = 10000000;
-  long long totalOrders = numThreads * ordersPerThread;
+  long long totalOrders = static_cast<long long>(numThreads) * ordersPerThread;
 
-  std::cout << "Running Warmup Phase with " << numThreads << " threads..."
-            << std::endl;
+  std::cout << "Running Warmup Phase with " << numThreads << " threads...\n";
   {
     Exchange warmupEngine(numThreads);
     std::vector<std::jthread> threads;
+    threads.reserve(numThreads);
     for (int i = 0; i < numThreads; ++i) {
       threads.emplace_back([&warmupEngine, id = i]() {
         for (int j = 0; j < 100000; ++j) {
@@ -125,29 +144,28 @@ int main(int argc, char *argv[]) {
       });
     }
   }
-  std::cout << "Warmup complete." << std::endl;
+  std::cout << "Warmup complete.\n";
 
-  std::cout << "Preparing benchmark with " << numThreads << " threads..."
-            << std::endl;
+  std::cout << "Preparing benchmark with " << numThreads << " threads...\n";
 
   if (measureLatency) {
-    std::cout << "Latency measurement ENABLED (expect lower throughput)."
-              << std::endl;
+    std::cout << "Latency measurement ENABLED (expect lower throughput).\n";
   } else {
-    std::cout << "Latency measurement DISABLED (max throughput)." << std::endl;
+    std::cout << "Latency measurement DISABLED (max throughput).\n";
   }
 
-  std::cout << "Pre-generating " << totalOrders << " orders..." << std::endl;
+  std::cout << "Pre-generating " << totalOrders << " orders...\n";
 
   if (measureLatency) {
-    submissionTimes = std::make_unique<std::atomic<int64_t>[]>(totalOrders + 1);
-    latencies.resize(totalOrders);
+    submissionTimes = std::make_unique<std::atomic<int64_t>[]>(
+        static_cast<size_t>(totalOrders + 1));
+    latencies.resize(static_cast<size_t>(totalOrders));
   }
 
   std::vector<std::vector<Order>> threadOrders(numThreads);
 
-  for (long long i = 0; i < numThreads; ++i) {
-    threadOrders[i].reserve(ordersPerThread);
+  for (int i = 0; i < numThreads; ++i) {
+    threadOrders[i].reserve(static_cast<size_t>(ordersPerThread));
     std::mt19937 gen(i);
     std::uniform_int_distribution<long long> priceDist(10000, 20000);
     std::uniform_int_distribution<> qtyDist(1, 100);
@@ -155,9 +173,9 @@ int main(int argc, char *argv[]) {
 
     for (long long j = 0; j < ordersPerThread; ++j) {
       OrderSide side = (typeDist(gen) == 0) ? OrderSide::Buy : OrderSide::Sell;
-      Price price = priceDist(gen);
-      double qty = qtyDist(gen);
-      OrderId id = (i * ordersPerThread) + j + 1;
+      Price price = static_cast<Price>(priceDist(gen));
+      Quantity qty = static_cast<Quantity>(qtyDist(gen));
+      OrderId id = static_cast<OrderId>((i * ordersPerThread) + j + 1);
       std::string symbol = "SYM-" + std::to_string(i % 10);
 
       threadOrders[i].emplace_back(id, 0, symbol, side, OrderType::Limit, price,
@@ -165,7 +183,7 @@ int main(int argc, char *argv[]) {
     }
   }
 
-  std::cout << "Starting benchmark (10 runs)..." << std::endl;
+  std::cout << "Starting benchmark (10 runs)...\n";
 
   std::vector<long long> throughputs;
   std::vector<double> durations;
@@ -174,6 +192,7 @@ int main(int argc, char *argv[]) {
 
   for (int run = 0; run < 10; ++run) {
     auto start = std::chrono::steady_clock::now();
+    std::vector<std::chrono::nanoseconds> threadWaits(numThreads);
 
     {
       Exchange engine(numThreads);
@@ -199,38 +218,52 @@ int main(int argc, char *argv[]) {
       std::vector<std::jthread> threads;
       threads.reserve(numThreads);
 
-      for (long long i = 0; i < numThreads; ++i) {
+      for (int i = 0; i < numThreads; ++i) {
         threads.emplace_back(benchmarkWorker, std::ref(engine),
-                             std::cref(threadOrders[i]), i);
+                             std::cref(threadOrders[i]), i, &threadWaits[i]);
       }
     }
 
     auto end = std::chrono::steady_clock::now();
     std::chrono::duration<double> diff = end - start;
-    long long tput = (long long)(totalOrders / diff.count());
+    long long tput =
+        static_cast<long long>(static_cast<double>(totalOrders) / diff.count());
+
+    std::chrono::nanoseconds totalWaitSum{0};
+    for (const auto &w : threadWaits) totalWaitSum += w;
+    double avgWaitNs = static_cast<double>(totalWaitSum.count()) /
+                       static_cast<double>(totalOrders);
 
     durations.push_back(diff.count());
     throughputs.push_back(tput);
 
     std::cout << "Run " << (run + 1) << ": " << diff.count()
-              << " seconds. Throughput: " << tput << " orders/second"
-              << std::endl;
+              << " seconds. Throughput: " << tput << " orders/second\n";
+    std::cout << "  Backpressure (Wait): Total=" << totalWaitSum.count()
+              << "ns Avg=" << avgWaitNs << "ns/order\n";
 
     if (measureLatency) {
       size_t numLatencies =
           std::min((size_t)latencyIndex.load(), latencies.size());
       if (numLatencies > 0) {
-        std::sort(latencies.begin(), latencies.begin() + numLatencies);
-        long long p50 = latencies[numLatencies * 0.50];
-        long long p99 = latencies[numLatencies * 0.99];
+        std::sort(
+            latencies.begin(),
+            latencies.begin() + static_cast<std::ptrdiff_t>(numLatencies));
+        long long p50 = latencies[static_cast<size_t>(
+            static_cast<double>(numLatencies) * 0.50)];
+        long long p99 = latencies[static_cast<size_t>(
+            static_cast<double>(numLatencies) * 0.99)];
         long long maxLat = latencies[numLatencies - 1];
-        long long avgLat = std::reduce(latencies.begin(),
-                                       latencies.begin() + numLatencies, 0LL) /
-                           numLatencies;
+        long long avgLat =
+            std::reduce(
+                latencies.begin(),
+                latencies.begin() + static_cast<std::ptrdiff_t>(numLatencies),
+                0LL) /
+            static_cast<long long>(numLatencies);
         std::cout << "  Latency (ns): Avg=" << avgLat << " P50=" << p50
-                  << " P99=" << p99 << " Max=" << maxLat << std::endl;
+                  << " P99=" << p99 << " Max=" << maxLat << "\n";
       } else {
-        std::cout << "  No trades recorded (latencies)." << std::endl;
+        std::cout << "  No trades recorded (latencies).\n";
       }
     }
   }
@@ -244,7 +277,7 @@ int main(int argc, char *argv[]) {
     if (t > maxTput) maxTput = t;
     sumTput += t;
   }
-  long long avgTput = sumTput / throughputs.size();
+  long long avgTput = sumTput / static_cast<long long>(throughputs.size());
 
   std::cout << "\n--- Benchmark Summary (10 Runs) ---\n";
   std::cout << "Average Throughput: " << avgTput << " orders/second\n";

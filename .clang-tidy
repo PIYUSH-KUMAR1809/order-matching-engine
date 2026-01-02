@@ -1,0 +1,6 @@
+---
+Checks:          'clang-diagnostic-*,clang-analyzer-*,bugprone-*,performance-*,portability-*,modernize-*,misc-*,cppcoreguidelines-*,-modernize-use-trailing-return-type,-cppcoreguidelines-avoid-magic-numbers,-cppcoreguidelines-pro-bounds-array-to-pointer-decay'
+WarningsAsErrors: ''
+HeaderFilterRegex: 'src/.*'
+FormatStyle:     file
+...

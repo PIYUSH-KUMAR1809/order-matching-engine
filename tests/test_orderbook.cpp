@@ -11,10 +11,10 @@
 
 class ExchangeLogicTest : public ::testing::Test {
  protected:
-  Exchange engine;
   std::vector<Trade> capturedTrades;
   std::mutex tradeMutex;
   std::condition_variable tradeCv;
+  Exchange engine;
 
   void SetUp() override {
     engine.setTradeCallback([this](const std::vector<Trade>& trades) {
@@ -29,44 +29,45 @@ class ExchangeLogicTest : public ::testing::Test {
     capturedTrades.clear();
   }
 
-  std::vector<Trade> waitForTrades(size_t count, int timeoutMs = 200) {
+  std::vector<Trade> waitForTrades(
+      size_t count,
+      std::chrono::milliseconds timeout = std::chrono::milliseconds(200)) {
+    engine.flush();
     std::unique_lock<std::mutex> lock(tradeMutex);
-    tradeCv.wait_for(lock, std::chrono::milliseconds(timeoutMs),
+    tradeCv.wait_for(lock, timeout,
                      [&] { return capturedTrades.size() >= count; });
     return capturedTrades;
   }
 
   void waitForProcessing() {
+    engine.flush();
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
   }
 };
 
-// Helper to count active nodes in the linked list
-int countActiveOrdersAt(const OrderBook* book, Price price, OrderSide side) {
-  auto* nonConstBook = const_cast<OrderBook*>(
-      book);  // Hack: getNode is non-const in previous step
+namespace {
+int countActiveOrdersAt(OrderBook* book, Price price, OrderSide side) {
   int32_t curr = book->getOrderHead(price, side);
   int count = 0;
   while (curr != -1) {
-    if (nonConstBook->getNode(curr).active) {
+    if (book->getNode(curr).active) {
       count++;
     }
-    curr = nonConstBook->getNode(curr).next;
+    curr = book->getNode(curr).next;
   }
   return count;
 }
 
-// Helper to get first active order
-OrderNode* getFirstActive(const OrderBook* book, Price price, OrderSide side) {
-  auto* nonConstBook = const_cast<OrderBook*>(book);
+OrderNode* getFirstActive(OrderBook* book, Price price, OrderSide side) {
   int32_t curr = book->getOrderHead(price, side);
   while (curr != -1) {
-    OrderNode& node = nonConstBook->getNode(curr);
+    OrderNode& node = book->getNode(curr);
     if (node.active) return &node;
     curr = node.next;
   }
   return nullptr;
 }
+}  // namespace
 
 TEST_F(ExchangeLogicTest, AddOrder) {
   engine.submitOrder(
@@ -74,10 +75,9 @@ TEST_F(ExchangeLogicTest, AddOrder) {
 
   engine.stop();
 
-  const OrderBook* book = engine.getOrderBook("TEST");
+  OrderBook* book = const_cast<OrderBook*>(engine.getOrderBook("TEST"));
   ASSERT_NE(book, nullptr);
 
-  // Verify order is in the linked list
   ASSERT_EQ(countActiveOrdersAt(book, 10000, OrderSide::Sell), 1);
 
   auto* node = getFirstActive(book, 10000, OrderSide::Sell);
@@ -97,10 +97,9 @@ TEST_F(ExchangeLogicTest, MatchFull) {
 
   engine.stop();
 
-  const OrderBook* book = engine.getOrderBook("TEST");
+  OrderBook* book = const_cast<OrderBook*>(engine.getOrderBook("TEST"));
   ASSERT_NE(book, nullptr);
 
-  // Should be empty (active = false)
   ASSERT_EQ(countActiveOrdersAt(book, 10000, OrderSide::Sell), 0);
   ASSERT_EQ(countActiveOrdersAt(book, 10000, OrderSide::Buy), 0);
 }
@@ -117,10 +116,9 @@ TEST_F(ExchangeLogicTest, MatchPartial) {
 
   engine.stop();
 
-  const OrderBook* book = engine.getOrderBook("TEST");
+  OrderBook* book = const_cast<OrderBook*>(engine.getOrderBook("TEST"));
   ASSERT_NE(book, nullptr);
 
-  // Sell order should remain with 10 qty
   ASSERT_EQ(countActiveOrdersAt(book, 10000, OrderSide::Sell), 1);
   auto* node = getFirstActive(book, 10000, OrderSide::Sell);
   ASSERT_NE(node, nullptr);
@@ -134,12 +132,12 @@ TEST_F(ExchangeLogicTest, NoMatch) {
   engine.submitOrder(
       Order(2, 0, "TEST", OrderSide::Buy, OrderType::Limit, 10000, 10));
 
-  auto loopTrades = waitForTrades(1, 50);
+  auto loopTrades = waitForTrades(1, std::chrono::milliseconds(50));
   ASSERT_TRUE(loopTrades.empty());
 
   engine.stop();
 
-  const OrderBook* book = engine.getOrderBook("TEST");
+  OrderBook* book = const_cast<OrderBook*>(engine.getOrderBook("TEST"));
   ASSERT_NE(book, nullptr);
 
   ASSERT_EQ(countActiveOrdersAt(book, 10100, OrderSide::Sell), 1);
@@ -156,7 +154,7 @@ TEST_F(ExchangeLogicTest, CancelOrder) {
 
   engine.stop();
 
-  const OrderBook* book = engine.getOrderBook("TEST");
+  OrderBook* book = const_cast<OrderBook*>(engine.getOrderBook("TEST"));
   ASSERT_NE(book, nullptr);
 
   ASSERT_EQ(countActiveOrdersAt(book, 10000, OrderSide::Sell), 0);
@@ -179,10 +177,10 @@ TEST_F(ExchangeLogicTest, MarketOrderFullFill) {
 }
 
 TEST(ExchangeTest, MultiAssetIsolation) {
-  Exchange engine;
   std::vector<Trade> captured;
   std::mutex mtx;
   std::condition_variable cv;
+  Exchange engine;
 
   engine.setTradeCallback([&](const auto& trades) {
     std::lock_guard<std::mutex> lock(mtx);
@@ -199,6 +197,7 @@ TEST(ExchangeTest, MultiAssetIsolation) {
   engine.submitOrder(
       Order(3, 0, "AAPL", OrderSide::Buy, OrderType::Limit, 15000, 50));
 
+  engine.flush();
   std::unique_lock<std::mutex> lock(mtx);
   cv.wait_for(lock, std::chrono::milliseconds(500),
               [&] { return !captured.empty(); });
@@ -207,5 +206,25 @@ TEST(ExchangeTest, MultiAssetIsolation) {
   ASSERT_EQ(captured[0].quantity, 50);
   ASSERT_EQ(captured[0].makerOrderId, 1);
   ASSERT_EQ(captured[0].takerOrderId, 3);
-  ASSERT_STREQ(captured[0].symbol, "AAPL");  // Using STREQ for char[]
+  ASSERT_STREQ(captured[0].symbol.data(), "AAPL");
+}
+
+TEST(ExchangeTest, SmartSharding) {
+  Exchange engine(2);
+
+  engine.registerSymbol("SYM_A", 0);
+  engine.registerSymbol("SYM_B", 1);
+
+  engine.submitOrder(
+      Order(1, 0, "SYM_A", OrderSide::Buy, OrderType::Limit, 100, 10));
+  engine.submitOrder(
+      Order(2, 0, "SYM_B", OrderSide::Buy, OrderType::Limit, 100, 10));
+
+  engine.stop();
+
+  const OrderBook* bookA = engine.getOrderBook("SYM_A");
+  const OrderBook* bookB = engine.getOrderBook("SYM_B");
+
+  ASSERT_NE(bookA, nullptr);
+  ASSERT_NE(bookB, nullptr);
 }
