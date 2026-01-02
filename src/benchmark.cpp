@@ -22,19 +22,33 @@ void pinThreadWithOffset(int threadId) {
 }
 
 void benchmarkWorker(Exchange &engine, const std::vector<Order> &orders,
-                     int threadId,
+                     int threadId, int iterations,
                      std::chrono::nanoseconds *totalWait = nullptr) {
   pinThreadWithOffset(threadId);
 
   std::chrono::nanoseconds localWait{0};
 
-  for (const auto &order : orders) {
-    if (measureLatency) {
-      submissionTimes[order.id].store(
-          std::chrono::steady_clock::now().time_since_epoch().count(),
-          std::memory_order_relaxed);
+  std::vector<Order> batch;
+  batch.reserve(256);
+
+  for (int i = 0; i < iterations; ++i) {
+    for (const auto &order : orders) {
+      if (measureLatency) {
+        submissionTimes[order.id].store(
+            std::chrono::steady_clock::now().time_since_epoch().count(),
+            std::memory_order_relaxed);
+      }
+
+      batch.push_back(order);
+      if (batch.size() == 256) {
+        engine.submitOrders(batch, threadId);
+        batch.clear();
+      }
     }
-    engine.submitOrder(order, threadId, totalWait ? &localWait : nullptr);
+  }
+
+  if (!batch.empty()) {
+    engine.submitOrders(batch, threadId);
   }
 
   engine.flush();
@@ -65,25 +79,27 @@ void runVerification() {
   const Price PRICE = 100;
   const std::string SYMBOL = "VERIFY";
 
+  int32_t symbolId = engine.registerSymbol(SYMBOL, 0);
+
   std::vector<Order> buyOrders;
   std::vector<Order> sellOrders;
   buyOrders.reserve(ORDER_COUNT);
   sellOrders.reserve(ORDER_COUNT);
 
   for (int i = 0; i < ORDER_COUNT; ++i) {
-    buyOrders.emplace_back((OrderId)(i + 1), 0, SYMBOL, OrderSide::Buy,
+    buyOrders.emplace_back((OrderId)(i + 1), 0, symbolId, OrderSide::Buy,
                            OrderType::Limit, PRICE, 1);
-    sellOrders.emplace_back((OrderId)(i + 1 + ORDER_COUNT), 0, SYMBOL,
+    sellOrders.emplace_back((OrderId)(i + 1 + ORDER_COUNT), 0, symbolId,
                             OrderSide::Sell, OrderType::Limit, PRICE, 1);
   }
 
   std::cout << "Submitting " << ORDER_COUNT << " BUY orders...\n";
-  benchmarkWorker(engine, buyOrders, 0);
+  benchmarkWorker(engine, buyOrders, 0, 1);
 
   std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
   std::cout << "Submitting " << ORDER_COUNT << " SELL orders...\n";
-  benchmarkWorker(engine, sellOrders, 0);
+  benchmarkWorker(engine, sellOrders, 0, 1);
   std::cout << "Waiting for matching...\n";
   std::this_thread::sleep_for(std::chrono::seconds(2));
 
@@ -127,6 +143,14 @@ int main(int argc, char *argv[]) {
   if (numThreads < 1) numThreads = 1;
 
   long long ordersPerThread = 10000000;
+  long long poolSize = 200000;
+  long long iterations = ordersPerThread / poolSize;
+
+  if (measureLatency) {
+    poolSize = ordersPerThread;
+    iterations = 1;
+  }
+
   long long totalOrders = static_cast<long long>(numThreads) * ordersPerThread;
 
   std::cout << "Running Warmup Phase with " << numThreads << " threads...\n";
@@ -136,8 +160,9 @@ int main(int argc, char *argv[]) {
     threads.reserve(numThreads);
     for (int i = 0; i < numThreads; ++i) {
       threads.emplace_back([&warmupEngine, id = i]() {
+        int32_t warmupSymId = warmupEngine.registerSymbol("WARMUP", 0);
         for (int j = 0; j < 100000; ++j) {
-          warmupEngine.submitOrder({(OrderId)j, 0, "WARMUP", OrderSide::Buy,
+          warmupEngine.submitOrder({(OrderId)j, 0, warmupSymId, OrderSide::Buy,
                                     OrderType::Limit, 100, 1},
                                    id);
         }
@@ -147,6 +172,8 @@ int main(int argc, char *argv[]) {
   std::cout << "Warmup complete.\n";
 
   std::cout << "Preparing benchmark with " << numThreads << " threads...\n";
+  std::cout << "Pool Size: " << poolSize << " orders (x" << iterations
+            << " iterations)\n";
 
   if (measureLatency) {
     std::cout << "Latency measurement ENABLED (expect lower throughput).\n";
@@ -154,7 +181,7 @@ int main(int argc, char *argv[]) {
     std::cout << "Latency measurement DISABLED (max throughput).\n";
   }
 
-  std::cout << "Pre-generating " << totalOrders << " orders...\n";
+  std::cout << "Pre-generating orders...\n";
 
   if (measureLatency) {
     submissionTimes = std::make_unique<std::atomic<int64_t>[]>(
@@ -165,25 +192,26 @@ int main(int argc, char *argv[]) {
   std::vector<std::vector<Order>> threadOrders(numThreads);
 
   for (int i = 0; i < numThreads; ++i) {
-    threadOrders[i].reserve(static_cast<size_t>(ordersPerThread));
+    threadOrders[i].reserve(static_cast<size_t>(poolSize));
     std::mt19937 gen(i);
     std::uniform_int_distribution<long long> priceDist(10000, 20000);
     std::uniform_int_distribution<> qtyDist(1, 100);
     std::uniform_int_distribution<> typeDist(0, 1);
 
-    for (long long j = 0; j < ordersPerThread; ++j) {
+    for (long long j = 0; j < poolSize; ++j) {
       OrderSide side = (typeDist(gen) == 0) ? OrderSide::Buy : OrderSide::Sell;
       Price price = static_cast<Price>(priceDist(gen));
+
       Quantity qty = static_cast<Quantity>(qtyDist(gen));
       OrderId id = static_cast<OrderId>((i * ordersPerThread) + j + 1);
-      std::string symbol = "SYM-" + std::to_string(i % 10);
+      int32_t symbolId = i % 10;
 
-      threadOrders[i].emplace_back(id, 0, symbol, side, OrderType::Limit, price,
-                                   qty);
+      threadOrders[i].emplace_back(id, 0, symbolId, side, OrderType::Limit,
+                                   price, qty);
     }
   }
 
-  std::cout << "Starting benchmark (10 runs)...\n";
+  std::cout << "Starting benchmark (10 runs)....\n";
 
   std::vector<long long> throughputs;
   std::vector<double> durations;
@@ -196,6 +224,10 @@ int main(int argc, char *argv[]) {
 
     {
       Exchange engine(numThreads);
+
+      for (int s = 0; s < 10; ++s) {
+        engine.registerSymbol("SYM-" + std::to_string(s), -1);
+      }
 
       if (measureLatency) {
         latencyIndex = 0;
@@ -220,7 +252,8 @@ int main(int argc, char *argv[]) {
 
       for (int i = 0; i < numThreads; ++i) {
         threads.emplace_back(benchmarkWorker, std::ref(engine),
-                             std::cref(threadOrders[i]), i, &threadWaits[i]);
+                             std::cref(threadOrders[i]), i, iterations,
+                             &threadWaits[i]);
       }
     }
 

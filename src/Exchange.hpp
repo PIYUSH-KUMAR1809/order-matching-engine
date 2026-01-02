@@ -26,56 +26,53 @@ class Exchange {
 
   struct Command {
     enum Type : uint8_t { Add, Cancel, Stop } type = Add;
-    Order order = {};
-    OrderId cancelId = 0;
-    std::array<char, 8> symbol = {};
+    union {
+      struct {
+        Order order;
+      } add;
+      struct {
+        OrderId orderId;
+        int32_t symbolId;
+      } cancel;
+    };
+
+    Command() : type(Add) { add.order = {}; }
   };
 
   void submitOrder(const Order &order, int shardHint = -1,
                    std::chrono::nanoseconds *wait_duration = nullptr);
-  void cancelOrder(const std::string &symbol, OrderId orderId);
+  void submitOrders(const std::vector<Order> &orders, int shardHint = -1);
+  void cancelOrder(int32_t symbolId, OrderId orderId);
   void stop();
   void flush();
 
-  void registerSymbol(const std::string &symbol, int shardId);
+  int32_t registerSymbol(const std::string &symbol, int shardId);
+  std::string getSymbolName(int32_t symbolId) const;
 
   void setTradeCallback(TradeCallback cb);
 
-  void printOrderBook(const std::string &symbol) const;
+  void printOrderBook(int32_t symbolId) const;
   void printAllOrderBooks() const;
-  const OrderBook *getOrderBook(const std::string &symbol) const;
+  const OrderBook *getOrderBook(int32_t symbolId) const;
 
   static void pinThread(int coreId);
 
  private:
-  struct StringHash {
-    using is_transparent = void;
-    size_t operator()(const char *txt) const {
-      return std::hash<std::string_view>{}(txt);
-    }
-    size_t operator()(std::string_view txt) const {
-      return std::hash<std::string_view>{}(txt);
-    }
-    size_t operator()(const std::string &txt) const {
-      return std::hash<std::string>{}(txt);
-    }
-  };
-
   struct Shard {
     RingBuffer<Command> queue{65536};
-    std::unordered_map<std::string, std::unique_ptr<OrderBook>, StringHash,
-                       std::equal_to<>>
-        books;
-    std::unique_ptr<MatchingStrategy> matchingStrategy;
+
+    std::vector<std::unique_ptr<OrderBook>> books;
+    StandardMatchingStrategy matchingStrategy;
     std::vector<Trade> tradeBuffer;
   };
 
   void workerLoop(int shardId);
-  size_t getShardId(std::string_view symbol) const;
 
   std::vector<std::unique_ptr<Shard>> shards_;
   std::vector<std::jthread> workers_;
   TradeCallback onTrade_;
-  std::unordered_map<std::string, size_t, StringHash, std::equal_to<>>
-      symbolShardMap_;
+
+  std::unordered_map<std::string, int32_t> symbolNameToId_;
+  std::vector<std::string> symbolIdToName_;
+  std::vector<int> symbolIdToShardId_;
 };

@@ -7,7 +7,7 @@
 #include "Order.hpp"
 
 struct Trade {
-  std::array<char, 8> symbol;
+  int32_t symbolId;
   Price price;
   Quantity quantity;
   OrderId makerOrderId;
@@ -149,4 +149,8 @@ class OrderBook {
 
   std::vector<OrderNode> orderPool;
   std::vector<int32_t> orderIndex;
+  std::vector<int32_t> freeList;
+
+ public:
+  void freeNode(int32_t idx) { freeList.push_back(idx); }
 };

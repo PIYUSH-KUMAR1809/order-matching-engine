@@ -2,14 +2,20 @@
 
 #include <iostream>
 
-void OrderBook::addOrder(const Order &order) {
-  if (orderPool.size() == orderPool.capacity()) {
-    size_t newCap = std::max(INITIAL_POOL_SIZE, orderPool.capacity() * 2);
-    orderPool.reserve(newCap);
+void OrderBook::addOrder(const Order& order) {
+  int32_t newIdx = -1;
+  if (!freeList.empty()) {
+    newIdx = freeList.back();
+    freeList.pop_back();
+    orderPool[newIdx] = {order, -1, true};
+  } else {
+    if (orderPool.size() == orderPool.capacity()) {
+      size_t newCap = std::max(INITIAL_POOL_SIZE, orderPool.capacity() * 2);
+      orderPool.reserve(newCap);
+    }
+    orderPool.push_back({order, -1, true});
+    newIdx = (int32_t)orderPool.size() - 1;
   }
-
-  orderPool.push_back({order, -1, true});
-  int32_t newIdx = (int32_t)orderPool.size() - 1;
 
   if (order.id >= orderIndex.size()) {
     if (orderIndex.capacity() <= order.id) {
@@ -57,15 +63,18 @@ void OrderBook::cancelOrder(OrderId orderId) {
   if (orderId >= orderIndex.size()) return;
   int32_t idx = orderIndex[orderId];
   if (idx != -1) {
-    orderPool[idx].active = false;
+    OrderNode& node = orderPool[idx];
+    if (node.order.id == orderId) {
+      node.active = false;
+    }
   }
 }
 
 void OrderBook::printBook() const {
-  std::cout << "--- Order Book ---" << std::endl;
-  std::cout << "Best Bid: " << bestBid << std::endl;
-  std::cout << "Best Ask: " << bestAsk << std::endl;
-  std::cout << "Pool Size: " << orderPool.size() << std::endl;
+  std::cout << "--- Order Book ---\n";
+  std::cout << "Best Bid: " << bestBid << "\n";
+  std::cout << "Best Ask: " << bestAsk << "\n";
+  std::cout << "Pool Size: " << orderPool.size() << "\n";
 }
 
 void OrderBook::compact() {}
