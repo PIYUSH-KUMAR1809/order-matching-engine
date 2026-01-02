@@ -72,7 +72,7 @@ TEST_F(ExchangeLogicTest, AddOrder) {
   engine.submitOrder(
       Order(1, 0, "TEST", OrderSide::Sell, OrderType::Limit, 10000, 10));
 
-  waitForProcessing();
+  engine.stop();
 
   const OrderBook* book = engine.getOrderBook("TEST");
   ASSERT_NE(book, nullptr);
@@ -95,6 +95,8 @@ TEST_F(ExchangeLogicTest, MatchFull) {
   ASSERT_EQ(trades.size(), 1);
   ASSERT_EQ(trades[0].quantity, 10);
 
+  engine.stop();
+
   const OrderBook* book = engine.getOrderBook("TEST");
   ASSERT_NE(book, nullptr);
 
@@ -113,6 +115,8 @@ TEST_F(ExchangeLogicTest, MatchPartial) {
   ASSERT_EQ(trades.size(), 1);
   ASSERT_EQ(trades[0].quantity, 10);
 
+  engine.stop();
+
   const OrderBook* book = engine.getOrderBook("TEST");
   ASSERT_NE(book, nullptr);
 
@@ -130,10 +134,10 @@ TEST_F(ExchangeLogicTest, NoMatch) {
   engine.submitOrder(
       Order(2, 0, "TEST", OrderSide::Buy, OrderType::Limit, 10000, 10));
 
-  waitForProcessing();
-
   auto loopTrades = waitForTrades(1, 50);
   ASSERT_TRUE(loopTrades.empty());
+
+  engine.stop();
 
   const OrderBook* book = engine.getOrderBook("TEST");
   ASSERT_NE(book, nullptr);
@@ -150,7 +154,7 @@ TEST_F(ExchangeLogicTest, CancelOrder) {
 
   engine.cancelOrder("TEST", 1);
 
-  waitForProcessing();
+  engine.stop();
 
   const OrderBook* book = engine.getOrderBook("TEST");
   ASSERT_NE(book, nullptr);

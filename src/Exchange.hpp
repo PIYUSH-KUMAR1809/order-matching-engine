@@ -19,6 +19,7 @@ class Exchange {
 
   void submitOrder(const Order &order, int shardHint = -1);
   void cancelOrder(const std::string &symbol, OrderId orderId);
+  void stop();
 
   void setTradeCallback(TradeCallback cb);
 

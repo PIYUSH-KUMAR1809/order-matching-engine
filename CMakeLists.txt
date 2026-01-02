@@ -9,6 +9,12 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
 endif()
 
+option(ENABLE_TSAN "Enable Thread Sanitizer" OFF)
+if(ENABLE_TSAN)
+  add_compile_options(-fsanitize=thread)
+  add_link_options(-fsanitize=thread)
+endif()
+
 include(FetchContent)
 
 # Google Test

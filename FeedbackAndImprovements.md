@@ -317,3 +317,46 @@ Between Round 3 and Round 4, throughput exploded from **~27M** to **~234M** orde
 - **Context**: Ensuring that 10M buy orders + 10M sell orders result in exactly 10M trades.
 - **Improvement**: (Planned) Deterministic verification mode to assert `Matches == min(Buys, Sells)` and `BookSize == |Buys - Sells|`.
 
+---
+
+## Round 5: Conceptual Clarity & QoL Improvements (January 2nd 2026)
+
+### Conceptual Feedback
+1.  **Conceptual Clarity vs. Optimization**
+    - **Feedback**: "Priority is in conceptual clarity rather than performance optimization... you are just measuring submission throughput... bypassing real challenges such as load skew, order mix, worker contention."
+    - **Context**: The user emphasizes that raw throughput numbers (100M/s) are less meaningful if the benchmark doesn't reflect real-world conditions (networking, tail latency, skew).
+    - **Takeaway**: Shift focus from chasing numbers to ensuring the engine handles realistic scenarios (e.g., measuring latency under load, not just throughput).
+
+2.  **Benchmark Validity**
+    - **Feedback**: "Your submitOrder boils down to a level of indirection + queue push... measuring amortized enqueue performance... ignore the arguably more important tail latency."
+    - **Action**: Pause and review the project's goals. Calculate amortized cycles/op/core.
+
+### Technical & QoL Improvements
+3.  **SPSC Buffer Alignment**
+    - **Feedback**: "Your SPSC buffer only statically align the head and tail, but not the buffer itself... use std::align_val_t with new."
+    - **Improvement**: modify `RingBuffer` allocation to ensure the data buffer starts on a cache line boundary.
+
+4.  **Hardware Interference Size**
+    - **Feedback**: "std::hardware_destructive_interference_size is not absolutely guaranteed... define a fallback say 64-byte."
+    - **Improvement**: Add a macro check or constant for cache line size to support cross-platform builds (e.g., M1 Mac vs Linux x86).
+
+5.  **Buffer Size & Power of 2**
+    - **Feedback**: "Don't have to make your buffer size power of 2 just to wrap around... opaque round-up could be wasteful... risks spilling your buffer to lower level caches."
+    - **Improvement**: Re-evaluate if power-of-2 is strictly necessary. If keeping it, use C++20 `<bit>` header (e.g., `std::bit_ceil`, `std::countl_zero`) instead of manual loops.
+
+6.  **Benchmarking Clock**
+    - **Feedback**: "std::high_resolution_clock... may alias system_clock and break monotonicity."
+    - **Improvement**: Use `std::chrono::steady_clock` for duration measurements.
+
+7.  **Concurrency Testing**
+    - **Feedback**: "Consider writing some TSan'd unit tests... benchmark using a single core vs two or more cores."
+    - **Improvement**: Add ThreadSanitizer (TSan) build target. Run benchmarks with specific core pinning/isolation if possible.
+
+8.  **System Quiescence**
+    - **Feedback**: "Benchmark setup doesn't quiesce the system... using std::thread::hardware_concurrency() ... cores will be serving other workloads."
+    - **Improvement**: Reduce thread count to leave room for OS/background tasks. Explore pinning (affinity).
+
+9.  **Tools**
+    - **Feedback**: Use `clang-tidy` and `perf`.
+
+
