@@ -71,12 +71,28 @@ class OrderBook {
     orderIndex.reserve(INITIAL_POOL_SIZE);
   }
 
-  std::vector<Trade> addOrder(const Order& order);
+  void addOrder(const Order& order);
   void cancelOrder(OrderId orderId);
 
   int32_t getOrderHead(Price p, OrderSide side) const {
     if (side == OrderSide::Buy) return bidHeads[p];
     return askHeads[p];
+  }
+
+  void setOrderHead(Price p, OrderSide side, int32_t newHead) {
+    if (side == OrderSide::Buy) {
+      bidHeads[p] = newHead;
+      if (newHead == -1) {
+        bidTails[p] = -1;
+        bidMask.clear(p);
+      }
+    } else {
+      askHeads[p] = newHead;
+      if (newHead == -1) {
+        askTails[p] = -1;
+        askMask.clear(p);
+      }
+    }
   }
 
   OrderNode& getNode(int32_t idx) { return orderPool[idx]; }

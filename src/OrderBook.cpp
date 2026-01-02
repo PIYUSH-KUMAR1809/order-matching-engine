@@ -2,7 +2,7 @@
 
 #include <iostream>
 
-std::vector<Trade> OrderBook::addOrder(const Order &order) {
+void OrderBook::addOrder(const Order &order) {
   if (orderPool.size() == orderPool.capacity()) {
     size_t newCap = std::max(INITIAL_POOL_SIZE, orderPool.capacity() * 2);
     orderPool.reserve(newCap);
@@ -21,7 +21,7 @@ std::vector<Trade> OrderBook::addOrder(const Order &order) {
   orderIndex[order.id] = newIdx;
 
   if (order.side == OrderSide::Buy) {
-    if (order.price >= MAX_PRICE) return {};
+    if (order.price >= MAX_PRICE) return;
 
     int32_t tail = bidTails[order.price];
     if (tail != -1) {
@@ -36,7 +36,7 @@ std::vector<Trade> OrderBook::addOrder(const Order &order) {
       bestBid = order.price;
     }
   } else {
-    if (order.price >= MAX_PRICE) return {};
+    if (order.price >= MAX_PRICE) return;
 
     int32_t tail = askTails[order.price];
     if (tail != -1) {
@@ -51,7 +51,6 @@ std::vector<Trade> OrderBook::addOrder(const Order &order) {
       bestAsk = order.price;
     }
   }
-  return {};
 }
 
 void OrderBook::cancelOrder(OrderId orderId) {
