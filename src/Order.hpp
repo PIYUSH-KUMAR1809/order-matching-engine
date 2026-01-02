@@ -14,29 +14,23 @@ using Quantity = uint32_t;
 
 struct Order {
   OrderId id;
+  Price price;
+  uint64_t clientOrderId;
+  int32_t symbolId;
+  Quantity quantity;
   OrderSide side;
   OrderType type;
-  Price price;
-  Quantity quantity;
-  char symbol[8];
-  uint64_t clientOrderId;
-
   bool active = true;
 
   Order() = default;
 
-  Order(OrderId id, uint64_t clientOrderId, const std::string &sym,
-        OrderSide side, OrderType type, Price price, Quantity quantity)
+  Order(OrderId id, uint64_t clientOrderId, int32_t symbolId, OrderSide side,
+        OrderType type, Price price, Quantity quantity)
       : id(id),
-        clientOrderId(clientOrderId),
-        side(side),
-        type(type),
         price(price),
-        quantity(quantity)
-  {
-    std::memset(symbol, 0, 8);
-    std::strncpy(symbol, sym.c_str(), 7);
-  }
-
-  std::string getSymbol() const { return std::string(symbol); }
+        clientOrderId(clientOrderId),
+        symbolId(symbolId),
+        quantity(quantity),
+        side(side),
+        type(type) {}
 };

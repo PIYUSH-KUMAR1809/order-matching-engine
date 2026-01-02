@@ -102,20 +102,11 @@ class RingBuffer {
     if (count == 0) return true;
     if (count > capacity_) return false;
 
-    while (lock_.test_and_set(std::memory_order_acquire)) {
-#if defined(__x86_64__) || defined(_M_X64)
-      _mm_pause();
-#elif defined(__aarch64__)
-      asm volatile("yield");
-#endif
-    }
-
     const size_t head = head_.load(std::memory_order_relaxed);
 
     if (head - tail_cache_ + count > capacity_) {
       tail_cache_ = tail_.load(std::memory_order_acquire);
       if (head - tail_cache_ + count > capacity_) {
-        lock_.clear(std::memory_order_release);
         return false;
       }
     }
@@ -125,7 +116,7 @@ class RingBuffer {
     }
 
     head_.store(head + count, std::memory_order_release);
-    lock_.clear(std::memory_order_release);
+
     return true;
   }
 

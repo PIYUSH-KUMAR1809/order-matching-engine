@@ -15,10 +15,8 @@ TcpServer::TcpServer(Exchange &engine, int port)
     : engine_(engine), port_(port), serverSocket_(-1), running_(false) {
   engine_.setTradeCallback([this](const std::vector<Trade> &trades) {
     for (const auto &trade : trades) {
-      if (trade.symbol[0] != '\0') {
-        broadcastTrade(std::string(trade.symbol.data()), trade.price,
-                       trade.quantity);
-      }
+      std::string symbol = engine_.getSymbolName(trade.symbolId);
+      broadcastTrade(symbol, trade.price, trade.quantity);
     }
   });
 }
@@ -122,7 +120,9 @@ std::string TcpServer::processRequest(int clientSocket,
       ss >> clientOrderId;
     }
 
-    Order order(id, clientOrderId, symbol, side, OrderType::Limit, price,
+    int32_t symbolId = engine_.registerSymbol(symbol, -1);
+
+    Order order(id, clientOrderId, symbolId, side, OrderType::Limit, price,
                 quantity);
 
     engine_.submitOrder(order);
@@ -135,7 +135,8 @@ std::string TcpServer::processRequest(int clientSocket,
     std::string symbol;
     OrderId id = 0;
     ss >> symbol >> id;
-    engine_.cancelOrder(symbol, id);
+    int32_t symbolId = engine_.registerSymbol(symbol, -1);
+    engine_.cancelOrder(symbolId, id);
     return "CANCEL_REQUEST_SENT\n";
 
   } else if (command == "PRINT") {
@@ -153,7 +154,8 @@ std::string TcpServer::processRequest(int clientSocket,
   } else if (command == "GET_BOOK") {
     std::string symbol;
     ss >> symbol;
-    const OrderBook *book = engine_.getOrderBook(symbol);
+    int32_t symbolId = engine_.registerSymbol(symbol, -1);
+    const OrderBook *book = engine_.getOrderBook(symbolId);
     if (!book) {
       return "ERROR_NO_BOOK\n";
     }

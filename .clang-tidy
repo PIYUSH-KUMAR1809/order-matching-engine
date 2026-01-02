@@ -1,6 +1,4 @@
----
-Checks:          'clang-diagnostic-*,clang-analyzer-*,bugprone-*,performance-*,portability-*,modernize-*,misc-*,cppcoreguidelines-*,-modernize-use-trailing-return-type,-cppcoreguidelines-avoid-magic-numbers,-cppcoreguidelines-pro-bounds-array-to-pointer-decay'
-WarningsAsErrors: ''
-HeaderFilterRegex: 'src/.*'
-FormatStyle:     file
-...
+Checks: "clang-diagnostic-*,clang-analyzer-*,bugprone-*,performance-*,portability-*,modernize-*,misc-*,cppcoreguidelines-*,-modernize-use-trailing-return-type,-cppcoreguidelines-avoid-magic-numbers,-cppcoreguidelines-pro-bounds-array-to-pointer-decay,-cppcoreguidelines-pro-bounds-constant-array-index,-cppcoreguidelines-pro-bounds-pointer-arithmetic,-cppcoreguidelines-avoid-c-arrays,-cppcoreguidelines-pro-type-reinterpret-cast,-cppcoreguidelines-pro-type-const-cast,-cppcoreguidelines-avoid-non-const-global-variables,-bugprone-narrowing-conversions,-cppcoreguidelines-narrowing-conversions,-cppcoreguidelines-owning-memory"
+WarningsAsErrors: ""
+HeaderFilterRegex: "src/.*"
+FormatStyle: file

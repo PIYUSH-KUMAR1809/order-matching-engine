@@ -70,12 +70,13 @@ OrderNode* getFirstActive(OrderBook* book, Price price, OrderSide side) {
 }  // namespace
 
 TEST_F(ExchangeLogicTest, AddOrder) {
+  int32_t symId = engine.registerSymbol("TEST", -1);
   engine.submitOrder(
-      Order(1, 0, "TEST", OrderSide::Sell, OrderType::Limit, 10000, 10));
+      Order(1, 0, symId, OrderSide::Sell, OrderType::Limit, 10000, 10));
 
   engine.stop();
 
-  OrderBook* book = const_cast<OrderBook*>(engine.getOrderBook("TEST"));
+  OrderBook* book = const_cast<OrderBook*>(engine.getOrderBook(symId));
   ASSERT_NE(book, nullptr);
 
   ASSERT_EQ(countActiveOrdersAt(book, 10000, OrderSide::Sell), 1);
@@ -86,10 +87,11 @@ TEST_F(ExchangeLogicTest, AddOrder) {
 }
 
 TEST_F(ExchangeLogicTest, MatchFull) {
+  int32_t symId = engine.registerSymbol("TEST", -1);
   engine.submitOrder(
-      Order(1, 0, "TEST", OrderSide::Sell, OrderType::Limit, 10000, 10));
+      Order(1, 0, symId, OrderSide::Sell, OrderType::Limit, 10000, 10));
   engine.submitOrder(
-      Order(2, 0, "TEST", OrderSide::Buy, OrderType::Limit, 10000, 10));
+      Order(2, 0, symId, OrderSide::Buy, OrderType::Limit, 10000, 10));
 
   auto trades = waitForTrades(1);
   ASSERT_EQ(trades.size(), 1);
@@ -97,7 +99,7 @@ TEST_F(ExchangeLogicTest, MatchFull) {
 
   engine.stop();
 
-  OrderBook* book = const_cast<OrderBook*>(engine.getOrderBook("TEST"));
+  OrderBook* book = const_cast<OrderBook*>(engine.getOrderBook(symId));
   ASSERT_NE(book, nullptr);
 
   ASSERT_EQ(countActiveOrdersAt(book, 10000, OrderSide::Sell), 0);
@@ -105,10 +107,11 @@ TEST_F(ExchangeLogicTest, MatchFull) {
 }
 
 TEST_F(ExchangeLogicTest, MatchPartial) {
+  int32_t symId = engine.registerSymbol("TEST", -1);
   engine.submitOrder(
-      Order(1, 0, "TEST", OrderSide::Sell, OrderType::Limit, 10000, 20));
+      Order(1, 0, symId, OrderSide::Sell, OrderType::Limit, 10000, 20));
   engine.submitOrder(
-      Order(2, 0, "TEST", OrderSide::Buy, OrderType::Limit, 10000, 10));
+      Order(2, 0, symId, OrderSide::Buy, OrderType::Limit, 10000, 10));
 
   auto trades = waitForTrades(1);
   ASSERT_EQ(trades.size(), 1);
@@ -116,7 +119,7 @@ TEST_F(ExchangeLogicTest, MatchPartial) {
 
   engine.stop();
 
-  OrderBook* book = const_cast<OrderBook*>(engine.getOrderBook("TEST"));
+  OrderBook* book = const_cast<OrderBook*>(engine.getOrderBook(symId));
   ASSERT_NE(book, nullptr);
 
   ASSERT_EQ(countActiveOrdersAt(book, 10000, OrderSide::Sell), 1);
@@ -127,17 +130,18 @@ TEST_F(ExchangeLogicTest, MatchPartial) {
 }
 
 TEST_F(ExchangeLogicTest, NoMatch) {
+  int32_t symId = engine.registerSymbol("TEST", -1);
   engine.submitOrder(
-      Order(1, 0, "TEST", OrderSide::Sell, OrderType::Limit, 10100, 10));
+      Order(1, 0, symId, OrderSide::Sell, OrderType::Limit, 10100, 10));
   engine.submitOrder(
-      Order(2, 0, "TEST", OrderSide::Buy, OrderType::Limit, 10000, 10));
+      Order(2, 0, symId, OrderSide::Buy, OrderType::Limit, 10000, 10));
 
   auto loopTrades = waitForTrades(1, std::chrono::milliseconds(50));
   ASSERT_TRUE(loopTrades.empty());
 
   engine.stop();
 
-  OrderBook* book = const_cast<OrderBook*>(engine.getOrderBook("TEST"));
+  OrderBook* book = const_cast<OrderBook*>(engine.getOrderBook(symId));
   ASSERT_NE(book, nullptr);
 
   ASSERT_EQ(countActiveOrdersAt(book, 10100, OrderSide::Sell), 1);
@@ -145,29 +149,31 @@ TEST_F(ExchangeLogicTest, NoMatch) {
 }
 
 TEST_F(ExchangeLogicTest, CancelOrder) {
+  int32_t symId = engine.registerSymbol("TEST", -1);
   engine.submitOrder(
-      Order(1, 0, "TEST", OrderSide::Sell, OrderType::Limit, 10000, 10));
+      Order(1, 0, symId, OrderSide::Sell, OrderType::Limit, 10000, 10));
 
   waitForProcessing();
 
-  engine.cancelOrder("TEST", 1);
+  engine.cancelOrder(symId, 1);
 
   engine.stop();
 
-  OrderBook* book = const_cast<OrderBook*>(engine.getOrderBook("TEST"));
+  OrderBook* book = const_cast<OrderBook*>(engine.getOrderBook(symId));
   ASSERT_NE(book, nullptr);
 
   ASSERT_EQ(countActiveOrdersAt(book, 10000, OrderSide::Sell), 0);
 }
 
 TEST_F(ExchangeLogicTest, MarketOrderFullFill) {
+  int32_t symId = engine.registerSymbol("TEST", -1);
   engine.submitOrder(
-      Order(1, 0, "TEST", OrderSide::Sell, OrderType::Limit, 10000, 10));
+      Order(1, 0, symId, OrderSide::Sell, OrderType::Limit, 10000, 10));
 
   waitForProcessing();
 
   engine.submitOrder(
-      Order(2, 0, "TEST", OrderSide::Buy, OrderType::Market, 0, 10));
+      Order(2, 0, symId, OrderSide::Buy, OrderType::Market, 0, 10));
 
   auto trades = waitForTrades(1);
 
@@ -188,14 +194,17 @@ TEST(ExchangeTest, MultiAssetIsolation) {
     cv.notify_one();
   });
 
-  engine.submitOrder(
-      Order(1, 0, "AAPL", OrderSide::Sell, OrderType::Limit, 15000, 100));
+  int32_t aapl = engine.registerSymbol("AAPL", -1);
+  int32_t goog = engine.registerSymbol("GOOG", -1);
 
   engine.submitOrder(
-      Order(2, 0, "GOOG", OrderSide::Buy, OrderType::Limit, 15000, 100));
+      Order(1, 0, aapl, OrderSide::Sell, OrderType::Limit, 15000, 100));
 
   engine.submitOrder(
-      Order(3, 0, "AAPL", OrderSide::Buy, OrderType::Limit, 15000, 50));
+      Order(2, 0, goog, OrderSide::Buy, OrderType::Limit, 15000, 100));
+
+  engine.submitOrder(
+      Order(3, 0, aapl, OrderSide::Buy, OrderType::Limit, 15000, 50));
 
   engine.flush();
   std::unique_lock<std::mutex> lock(mtx);
@@ -206,24 +215,24 @@ TEST(ExchangeTest, MultiAssetIsolation) {
   ASSERT_EQ(captured[0].quantity, 50);
   ASSERT_EQ(captured[0].makerOrderId, 1);
   ASSERT_EQ(captured[0].takerOrderId, 3);
-  ASSERT_STREQ(captured[0].symbol.data(), "AAPL");
+  ASSERT_EQ(captured[0].symbolId, aapl);
 }
 
 TEST(ExchangeTest, SmartSharding) {
   Exchange engine(2);
 
-  engine.registerSymbol("SYM_A", 0);
-  engine.registerSymbol("SYM_B", 1);
+  int32_t symA = engine.registerSymbol("SYM_A", 0);
+  int32_t symB = engine.registerSymbol("SYM_B", 1);
 
   engine.submitOrder(
-      Order(1, 0, "SYM_A", OrderSide::Buy, OrderType::Limit, 100, 10));
+      Order(1, 0, symA, OrderSide::Buy, OrderType::Limit, 100, 10));
   engine.submitOrder(
-      Order(2, 0, "SYM_B", OrderSide::Buy, OrderType::Limit, 100, 10));
+      Order(2, 0, symB, OrderSide::Buy, OrderType::Limit, 100, 10));
 
   engine.stop();
 
-  const OrderBook* bookA = engine.getOrderBook("SYM_A");
-  const OrderBook* bookB = engine.getOrderBook("SYM_B");
+  const OrderBook* bookA = engine.getOrderBook(symA);
+  const OrderBook* bookB = engine.getOrderBook(symB);
 
   ASSERT_NE(bookA, nullptr);
   ASSERT_NE(bookB, nullptr);
