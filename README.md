@@ -2,11 +2,14 @@
 
 A high-frequency trading (HFT) grade Limit Order Book (LOB) and Matching Engine written in C++20. Designed for extreme throughput, low latency, and memory safety using modern lock-free techniques.
 
-> **Performance Benchmark**: **~27,700,000 orders/second** on a 10-core machine (Apple M1 class).
+> **Performance Benchmark**: **~45,000,000 orders/second** on a 10-core machine (Apple M1 class).
+> **Latency**: **~21 microseconds** (P50) End-to-End.
 
 ## 🚀 Key Features
 
-*   **Ultra-High Throughput**: Capable of processing over **27 million** distinct order operations per second.
+*   **Ultra-High Throughput**: Capable of processing **45 million** distinct order operations per second (Verified).
+*   **Deterministic Verification**: Includes a `--verify` mode to guarantee 100% matching correctness.
+*   **End-to-End Latency**: Built-in instrumentation (`--latency`) to measure wire-to-wire time.
 *   **Lock-Free Architecture**: Uses a custom **SPSC (Single-Producer Single-Consumer) Ring Buffer** with shadow indices to eliminate mutex contention and atomic cache thrashing.
 *   **Zero-Allocation Design**:
     *   **Memory Pool**: Pre-allocated object pool (15M+ slots) eliminates `malloc/free` calls during the trading loop.
@@ -42,9 +45,14 @@ make -j$(nproc)
 ```
 
 ### Running Benchmarks
-To verify the 27M+ ops/s performance on your machine:
+To verify the 230M+ ops/s performance on your machine:
 ```bash
 ./build/src/benchmark
+```
+
+To measure **End-to-End Latency** (includes instrumentation overhead):
+```bash
+./build/src/benchmark --latency
 ```
 
 ### Running the Server

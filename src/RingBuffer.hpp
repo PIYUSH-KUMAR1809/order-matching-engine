@@ -28,19 +28,29 @@ class RingBuffer {
   RingBuffer& operator=(const RingBuffer&) = delete;
 
   bool push(const T& item) {
-    const size_t head = head_.load(std::memory_order_relaxed);
-    const size_t next_head = (head + 1) & mask_;
+    while (lock_.test_and_set(std::memory_order_acquire)) {
+#if defined(__x86_64__) || defined(_M_X64)
+      _mm_pause();
+#elif defined(__aarch64__)
+      asm volatile("yield");
+#endif
+    }
 
-    if (next_head == tail_cache_) {
+    const size_t head = head_.load(std::memory_order_relaxed);
+    const size_t next_head = head + 1;
+
+    if (head - tail_cache_ >= capacity_) {
       tail_cache_ = tail_.load(std::memory_order_acquire);
-      
-      if (next_head == tail_cache_) {
+
+      if (head - tail_cache_ >= capacity_) {
+        lock_.clear(std::memory_order_release);
         return false;
       }
     }
 
-    buffer_[head] = item;
+    buffer_[head & mask_] = item;
     head_.store(next_head, std::memory_order_release);
+    lock_.clear(std::memory_order_release);
     return true;
   }
 
@@ -49,24 +59,46 @@ class RingBuffer {
 
     if (tail == head_cache_) {
       head_cache_ = head_.load(std::memory_order_acquire);
-      
       if (tail == head_cache_) {
         return false;
       }
     }
 
-    item = buffer_[tail];
-    tail_.store((tail + 1) & mask_, std::memory_order_release);
+    item = buffer_[tail & mask_];
+    tail_.store(tail + 1, std::memory_order_release);
     return true;
+  }
+
+  size_t pop_batch(T* output, size_t max_count) {
+    const size_t tail = tail_.load(std::memory_order_relaxed);
+
+    // Check available using cache
+    if (tail == head_cache_) {
+      head_cache_ = head_.load(std::memory_order_acquire);
+      if (tail == head_cache_) return 0;
+    }
+
+    size_t head = head_cache_;
+
+    size_t available = head - tail;  // Monotonic difference
+    if (available > max_count) available = max_count;
+
+    // Read loop
+    for (size_t i = 0; i < available; ++i) {
+      output[i] = buffer_[(tail + i) & mask_];
+    }
+
+    tail_.store(tail + available, std::memory_order_release);
+    return available;
   }
 
   void push_block(const T& item) {
     while (!push(item)) {
-        #if defined(__x86_64__) || defined(_M_X64)
-            _mm_pause(); 
-        #elif defined(__aarch64__)
-            asm volatile("yield");
-        #endif
+#if defined(__x86_64__) || defined(_M_X64)
+      _mm_pause();
+#elif defined(__aarch64__)
+      asm volatile("yield");
+#endif
     }
   }
 
@@ -80,4 +112,6 @@ class RingBuffer {
 
   alignas(hardware_destructive_interference_size) std::atomic<size_t> tail_{0};
   alignas(hardware_destructive_interference_size) size_t head_cache_{0};
+
+  std::atomic_flag lock_ = ATOMIC_FLAG_INIT;
 };

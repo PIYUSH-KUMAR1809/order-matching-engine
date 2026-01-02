@@ -2,8 +2,10 @@
 
 #include <iostream>
 
-Exchange::Exchange() {
-  int numWorkers = std::thread::hardware_concurrency();
+Exchange::Exchange(int numWorkers) {
+  if (numWorkers <= 0) {
+    numWorkers = std::thread::hardware_concurrency();
+  }
   if (numWorkers == 0) numWorkers = 1;
 
   shards_.resize(numWorkers);
@@ -23,22 +25,35 @@ Exchange::~Exchange() {
   }
 }
 
-size_t Exchange::getShardId(const std::string &symbol) const {
-  return std::hash<std::string>{}(symbol) % shards_.size();
+size_t Exchange::getShardId(std::string_view symbol) const {
+  return std::hash<std::string_view>{}(symbol) % shards_.size();
 }
 
 void Exchange::submitOrder(const Order &order, int shardHint) {
   size_t shardId = (shardHint >= 0 && shardHint < shards_.size())
                        ? shardHint
                        : getShardId(order.symbol);
+
   auto &shard = *shards_[shardId];
-  shard.queue.push_block({Command::Add, order, 0, order.symbol});
+  Command cmd;
+  cmd.type = Command::Add;
+  cmd.order = order;
+  cmd.cancelId = 0;
+  std::memcpy(cmd.symbol, order.symbol, 8);
+  shard.queue.push_block(cmd);
 }
 
 void Exchange::cancelOrder(const std::string &symbol, OrderId orderId) {
   size_t shardId = getShardId(symbol);
   auto &shard = *shards_[shardId];
-  shard.queue.push_block({Command::Cancel, {}, orderId, symbol});
+
+  Command cmd;
+  cmd.type = Command::Cancel;
+  cmd.cancelId = orderId;
+  std::memset(cmd.symbol, 0, 8);
+  std::strncpy(cmd.symbol, symbol.c_str(), 7);
+
+  shard.queue.push_block(cmd);
 }
 
 void Exchange::setTradeCallback(TradeCallback cb) { onTrade_ = std::move(cb); }
@@ -46,32 +61,54 @@ void Exchange::setTradeCallback(TradeCallback cb) { onTrade_ = std::move(cb); }
 void Exchange::workerLoop(int shardId) {
   auto &shard = *shards_[shardId];
 
+  OrderBook *lastBook = nullptr;
+  char lastSymbol[8] = {0};
+
+  const size_t BATCH_SIZE = 64;
+  Command cmdBuffer[BATCH_SIZE];
+
   while (true) {
-    Command cmd;
-    if (shard.queue.pop(cmd)) {
+    size_t count = shard.queue.pop_batch(cmdBuffer, BATCH_SIZE);
+
+    if (count == 0) {
+      for (auto &pair : shard.books) {
+        pair.second->compact();
+      }
+      std::this_thread::yield();
+      continue;
+    }
+
+    for (size_t i = 0; i < count; ++i) {
+      const Command &cmd = cmdBuffer[i];
+
       if (cmd.type == Command::Stop) {
-        break;
+        return;
       }
 
-      if (shard.books.find(cmd.symbol) == shard.books.end()) {
-        shard.books[cmd.symbol] = std::make_unique<OrderBook>();
+      OrderBook *book = nullptr;
+
+      if (lastBook && std::memcmp(cmd.symbol, lastSymbol, 8) == 0) {
+        book = lastBook;
+      } else {
+        auto it = shard.books.find(cmd.symbol);
+        if (it == shard.books.end()) {
+          it = shard.books.emplace(cmd.symbol, std::make_unique<OrderBook>())
+                   .first;
+        }
+        book = it->second.get();
+        lastBook = book;
+        std::memcpy(lastSymbol, cmd.symbol, 8);
       }
-      auto &book = *shard.books[cmd.symbol];
 
       if (cmd.type == Command::Add) {
-        shard.matchingStrategy->match(book, cmd.order, shard.tradeBuffer);
+        shard.matchingStrategy->match(*book, cmd.order, shard.tradeBuffer);
 
         if (!shard.tradeBuffer.empty() && onTrade_) {
           onTrade_(shard.tradeBuffer);
         }
       } else if (cmd.type == Command::Cancel) {
-        book.cancelOrder(cmd.cancelId);
+        book->cancelOrder(cmd.cancelId);
       }
-    } else {
-      for (auto &pair : shard.books) {
-        pair.second->compact();
-      }
-      std::this_thread::yield();
     }
   }
 }

@@ -18,14 +18,14 @@ void StandardMatchingStrategy::match(OrderBook& book, const Order& order,
       if (incoming.type == OrderType::Limit && currentPrice > incoming.price)
         break;
 
-      int32_t headIdx = book.getOrderHead(currentPrice, OrderSide::Sell);
-      int32_t currIdx = headIdx;
+      while (true) {
+        int32_t currIdx = book.getOrderHead(currentPrice, OrderSide::Sell);
+        if (currIdx == -1) break;
 
-      while (currIdx != -1) {
         OrderNode& askNode = book.getNode(currIdx);
 
         if (!askNode.active) {
-          currIdx = askNode.next;
+          book.setOrderHead(currentPrice, OrderSide::Sell, askNode.next);
           continue;
         }
 
@@ -44,16 +44,12 @@ void StandardMatchingStrategy::match(OrderBook& book, const Order& order,
 
         if (askNode.order.quantity == 0) {
           askNode.active = false;
+          book.setOrderHead(currentPrice, OrderSide::Sell, askNode.next);
         }
 
         if (incoming.quantity == 0) break;
-
-        currIdx = askNode.next;
       }
 
-      if (incoming.quantity > 0) {
-        book.resetLevel(currentPrice, OrderSide::Sell);
-      }
       currentPrice++;
     }
 
@@ -72,14 +68,14 @@ void StandardMatchingStrategy::match(OrderBook& book, const Order& order,
       if (incoming.type == OrderType::Limit && currentPrice < incoming.price)
         break;
 
-      int32_t headIdx = book.getOrderHead(currentPrice, OrderSide::Buy);
-      int32_t currIdx = headIdx;
+      while (true) {
+        int32_t currIdx = book.getOrderHead(currentPrice, OrderSide::Buy);
+        if (currIdx == -1) break;
 
-      while (currIdx != -1) {
         OrderNode& bidNode = book.getNode(currIdx);
 
         if (!bidNode.active) {
-          currIdx = bidNode.next;
+          book.setOrderHead(currentPrice, OrderSide::Buy, bidNode.next);
           continue;
         }
 
@@ -98,15 +94,10 @@ void StandardMatchingStrategy::match(OrderBook& book, const Order& order,
 
         if (bidNode.order.quantity == 0) {
           bidNode.active = false;
+          book.setOrderHead(currentPrice, OrderSide::Buy, bidNode.next);
         }
 
         if (incoming.quantity == 0) break;
-
-        currIdx = bidNode.next;
-      }
-
-      if (incoming.quantity > 0) {
-        book.resetLevel(currentPrice, OrderSide::Buy);
       }
 
       if (currentPrice == 0) break;
