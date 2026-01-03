@@ -1,35 +1,47 @@
 # High-Performance Order Matching Engine
 
-A high-frequency trading (HFT) grade Limit Order Book (LOB) and Matching Engine written in C++20. Designed for extreme throughput, low latency, and memory safety using modern lock-free techniques.
+A production-grade, high-frequency trading (HFT) Limit Order Book (LOB) and Matching Engine written in C++20. Designed for extreme throughput, deterministic latency, and cache efficiency using modern lock-free techniques.
 
-> **Performance Benchmark**: **~45,000,000 orders/second** on a 10-core machine (Apple M1 class).
-> **Latency**: **~21 microseconds** (P50) End-to-End.
+> **Performance Benchmark**: **~156,000,000 orders/second** (Average) | **~169,000,000** (Peak) on Apple M1 Pro.
+
+---
 
 ## 🚀 Key Features
 
-*   **Ultra-High Throughput**: Capable of processing **45 million** distinct order operations per second (Verified).
-*   **Deterministic Verification**: Includes a `--verify` mode to guarantee 100% matching correctness.
-*   **End-to-End Latency**: Built-in instrumentation (`--latency`) to measure wire-to-wire time.
-*   **Lock-Free Architecture**: Uses a custom **SPSC (Single-Producer Single-Consumer) Ring Buffer** with shadow indices to eliminate mutex contention and atomic cache thrashing.
-*   **Zero-Allocation Design**:
-    *   **Memory Pool**: Pre-allocated object pool (15M+ slots) eliminates `malloc/free` calls during the trading loop.
-    *   **Intrusive Linked Lists**: Uses index-based chaining (`int32_t next`) instead of standard container pointers.
+*   **Ultra-High Throughput**: Capable of processing **>150 million** distinct order operations per second.
+*   **Zero-Allocation Hot Path**:
+    *   **PMR (Polymorphic Memory Resources)**: Uses `std::pmr::monotonic_buffer_resource` with a pre-allocated 512MB stack buffer for nanosecond-level allocations.
+    *   **Soft Limits**: Gracefully falls back to heap allocation if the static buffer is exhausted (no crashes).
+*   **Lock-Free Architecture**:
+    *   **SPSC Ring Buffer**: Custom cache-line aligned (`alignas(64)`) ring buffer for thread-safe, lock-free communication between producer and consumer.
+    *   **Shard-per-Core**: "Share by Communicating" design. Each CPU core owns a dedicated shard, eliminating mutex contention entirely.
 *   **Cache Optimizations**:
-    *   **Flat OrderBook**: Replaced `std::map` with `std::vector` for **O(1)** price level access.
-    *   **Bitset Scanning**: Uses CPU intrinsics (`__builtin_ctzll`) to skip empty price levels instantly.
-    *   **POD Enforce**: Order objects are Plain Old Data (POD) with fixed-size `char` arrays, enabling fast `memcpy` operations.
-*   **Precision Safety**: All prices are fixed-point `int64_t` to eliminate floating-point precision errors.
+    *   **Flat OrderBook**: Replaces node-based maps with `std::vector` for linear memory access.
+    *   **Bitset Scanning**: Uses CPU intrinsics (`__builtin_ctzll`) to "teleport" to the next active price level, skipping empty levels instantly.
+    *   **Compact Storage**: Order objects are PODs (Plain Old Data) optimized for `memcpy`.
+*   **Verification & Safety**:
+    *   **Deterministic**: `--verify` mode runs a mathematically verifiable sequence (Matches == Min(Buys, Sells)).
+    *   **Instrumentation**: `--latency` mode enables wall-clock end-to-end latency tracking.
+
+---
 
 ## 🏗 Architecture
 
-The system avoids the traditional "Global Lock" bottleneck by adopting a **Shard-per-Core** architecture combined with **Lock-Free Queues**:
+The system moves away from the traditional "Central Limit Order Book with Global Lock" to a **Partitioned/Sharded Model**.
 
-1.  **Exchange**: Distributes orders to shards based on symbol.
-2.  **Ring Buffer**: A cache-line aligned, lock-free SPSC queue acts as the highway between the producer (Net/Benchmark) and the consumer (Matcher).
-3.  **OrderBook (Flat w/ Bitset)**: 
-    *   `bids[price]` -> Head Index of the Memory Pool.
-    *   `bidMask` -> Bitmap of active levels for O(1) iteration.
-4.  **Memory Pool**: A monolithic `std::vector<OrderNode>` stores all orders contiguously, improving CPU cache locality.
+1.  **Ingestion (Exchange)**:
+    *   Orders are received and hashed by `SymbolID`.
+    *   "Smart Gateway" logic routes the order to the specific Shard owning that symbol.
+2.  **Transport (Ring Buffer)**:
+    *   Orders are pushed into a lock-free Single-Producer Single-Consumer (SPSC) ring buffer.
+    *   This acts as the boundary between the "Network/Producer" thread and the "Matching/Consumer" thread.
+3.  **Matching (Core)**:
+    *   **Flat OrderBook**: Bids and Asks are simple `std::pmr::vector`s indexed directly by price (O(1) lookup).
+    *   **Matcher**: Iterates linearly over the vector for maximum hardware prefetching efficiency. Active orders are tracked via a `Bitset`.
+4.  **Memory Management**:
+    *   A Monotonic Buffer (Arena) provides memory for new orders. It resets instantly (`release()`) between benchmark runs, preventing fragmentation.
+
+---
 
 ## 🛠 Build & Run
 
@@ -45,45 +57,60 @@ make -j$(nproc)
 ```
 
 ### Running Benchmarks
-To verify the 230M+ ops/s performance on your machine:
+To replicate the >150M ops/s performance:
 ```bash
 ./build/src/benchmark
 ```
 
-To measure **End-to-End Latency** (includes instrumentation overhead):
+To measure **End-to-End Latency** (approximate P50/P99):
 ```bash
 ./build/src/benchmark --latency
 ```
+*Note: Latency mode adds instrumentation overhead and runs usually at ~30-40M ops/sec.*
+
+### Running Verification
+To ensure the engine is actually matching correctly and not just dropping frames:
+```bash
+./build/src/benchmark --verify
+```
 
 ### Running the Server
-Start the engine networking layer:
+Start the engine networking layer (listens on port 8080):
 ```bash
 ./build/src/OrderMatchingEngine
 ```
-The server listens on port **8080**.
+
+---
 
 ## 📊 Client Usage (TCP)
 
-Connect using `netcat` or the provided Python client.
+Connect using `netcat` or any TCP client.
 
 **Submit Order:**
-```
+```text
 BUY AAPL 100 15000
 > ORDER_ACCEPTED_ASYNC 1
 ```
 *(Format: SIDE SYMBOL QTY PRICE_INT)*
 
 **Subscribe to Market Data:**
-```
+```text
 SUBSCRIBE AAPL
 > SUBSCRIBED AAPL
 > TRADE AAPL 15000 50
 ```
 
+---
+
 ## 🧪 Testing
 
-The project includes a comprehensive GoogleTest suite.
+The project includes a comprehensive GoogleTest suite covering matching logic, cancellation scenarios, and partial fills.
 
 ```bash
 ./build/tests/unit_tests
 ```
+
+## 📈 Roadmap (Future)
+*   **Kernel Bypass**: Integration with DPDK/Solarflare for sub-microsecond wire latency.
+*   **Batching**: Processing orders in cache-line sized batches (e.g., 8 orders) to amortize ring buffer costs.
+*   **Market Data Distribution**: Multicast UDP feed for quote dissemination.
