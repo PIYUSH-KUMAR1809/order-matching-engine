@@ -123,6 +123,13 @@ class RingBuffer {
     return count;
   }
 
+  size_t size() {
+    lock_.lock();
+    size_t count = (size_ + tail_ - head_) % size_;
+    lock_.unlock();
+    return count;
+  }
+
  private:
   size_t size_;
   std::unique_ptr<T[]> buffer_;

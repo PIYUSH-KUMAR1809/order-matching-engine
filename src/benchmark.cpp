@@ -39,7 +39,7 @@ void benchmarkWorker(Exchange &engine, const std::vector<Order> &orders,
     }
   }
 
-  engine.flush();
+  engine.drain();
 
   if (totalWait) {
     *totalWait = localWait;
@@ -134,11 +134,6 @@ int main(int argc, char *argv[]) {
   long long poolSize = 200000;
   long long iterations = ordersPerThread / poolSize;
 
-  if (measureLatency) {
-    poolSize = ordersPerThread;
-    iterations = 1;
-  }
-
   long long totalOrders = static_cast<long long>(numThreads) * ordersPerThread;
 
   std::cout << "Running Warmup Phase with " << numThreads << " threads...\n";
@@ -221,9 +216,15 @@ int main(int argc, char *argv[]) {
       auto start = std::chrono::steady_clock::now();
       std::vector<std::chrono::nanoseconds> threadWaits(numThreads);
 
+      std::atomic<long long> totalTrades{0};
+
       if (measureLatency) {
         latencyIndex = 0;
-        engine.setTradeCallback([](const std::vector<Trade> &trades) {
+      }
+
+      engine.setTradeCallback([&](const std::vector<Trade> &trades) {
+        totalTrades.fetch_add(trades.size(), std::memory_order_relaxed);
+        if (measureLatency) {
           long long now =
               std::chrono::steady_clock::now().time_since_epoch().count();
           for (const auto &trade : trades) {
@@ -236,8 +237,8 @@ int main(int argc, char *argv[]) {
               }
             }
           }
-        });
-      }
+        }
+      });
 
       std::vector<std::jthread> threads;
       threads.reserve(numThreads);
@@ -265,6 +266,7 @@ int main(int argc, char *argv[]) {
 
       std::cout << "Run " << (run + 1) << ": " << diff.count()
                 << " seconds. Throughput: " << tput << " orders/second\n";
+      std::cout << "  Trades Executed: " << totalTrades.load() << "\n";
       std::cout << "  Backpressure (Wait): Total=" << totalWaitSum.count()
                 << "ns Avg=" << avgWaitNs << "ns/order\n";
 

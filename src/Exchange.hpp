@@ -43,6 +43,7 @@ class Exchange {
   void cancelOrder(int32_t symbolId, OrderId orderId);
   void stop();
   void flush();
+  void drain();
   void reset();
 
   int32_t registerSymbol(const std::string &symbol, int shardId);
