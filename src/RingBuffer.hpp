@@ -1,161 +1,133 @@
 #pragma once
 
+#include <algorithm>
 #include <atomic>
-#include <bit>
-#include <cassert>
-#include <chrono>
-#include <cstddef>
-#include <new>
+#include <cstring>
+#include <memory>
+#include <thread>
 
-#ifdef __cpp_lib_hardware_interference_size
-using std::hardware_destructive_interference_size;
-#else
-constexpr size_t hardware_destructive_interference_size = 64;
+#if defined(__x86_64__) || defined(_M_X64)
+#include <emmintrin.h>
 #endif
+
+class SpinLock {
+  std::atomic_flag flag = ATOMIC_FLAG_INIT;
+
+ public:
+  void lock() {
+    while (flag.test_and_set(std::memory_order_acquire)) {
+      while (flag.test(std::memory_order_relaxed)) {
+#if defined(__x86_64__) || defined(_M_X64)
+        _mm_pause();
+#elif defined(__aarch64__)
+        asm volatile("yield");
+#else
+        std::this_thread::yield();
+#endif
+      }
+    }
+  }
+
+  void unlock() { flag.clear(std::memory_order_release); }
+};
 
 template <typename T>
 class RingBuffer {
  public:
-  explicit RingBuffer(size_t capacity) {
-    if (capacity < 2) capacity = 2;
-    capacity_ = std::bit_ceil(capacity);
-    mask_ = capacity_ - 1;
-
-    buffer_ = new (std::align_val_t(hardware_destructive_interference_size))
-        T[capacity_];
-  }
-
-  ~RingBuffer() {
-    ::operator delete[](
-        buffer_, std::align_val_t(hardware_destructive_interference_size));
-  }
+  explicit RingBuffer(size_t size)
+      : size_(size), buffer_(std::make_unique<T[]>(size)), head_(0), tail_(0) {}
 
   RingBuffer(const RingBuffer&) = delete;
   RingBuffer& operator=(const RingBuffer&) = delete;
-  RingBuffer(RingBuffer&&) = delete;
-  RingBuffer& operator=(RingBuffer&&) = delete;
 
   bool push(const T& item) {
-    while (lock_.test_and_set(std::memory_order_acquire)) {
-#if defined(__x86_64__) || defined(_M_X64)
-      _mm_pause();
-#elif defined(__aarch64__)
-      asm volatile("yield");
-#endif
+    lock_.lock();
+    size_t next_tail = (tail_ + 1) % size_;
+    if (next_tail == head_) {
+      lock_.unlock();
+      return false;
     }
-
-    const size_t head = head_.load(std::memory_order_relaxed);
-    const size_t next_head = head + 1;
-
-    if (head - tail_cache_ >= capacity_) {
-      tail_cache_ = tail_.load(std::memory_order_acquire);
-
-      if (head - tail_cache_ >= capacity_) {
-        lock_.clear(std::memory_order_release);
-        return false;
-      }
-    }
-
-    buffer_[head & mask_] = item;
-    head_.store(next_head, std::memory_order_release);
-    lock_.clear(std::memory_order_release);
+    buffer_[tail_] = item;
+    tail_ = next_tail;
+    lock_.unlock();
     return true;
   }
 
   bool pop(T& item) {
-    const size_t tail = tail_.load(std::memory_order_relaxed);
-
-    if (tail == head_cache_) {
-      head_cache_ = head_.load(std::memory_order_acquire);
-      if (tail == head_cache_) {
-        return false;
-      }
+    lock_.lock();
+    if (head_ == tail_) {
+      lock_.unlock();
+      return false;
     }
-
-    item = buffer_[tail & mask_];
-    tail_.store(tail + 1, std::memory_order_release);
+    item = buffer_[head_];
+    head_ = (head_ + 1) % size_;
+    lock_.unlock();
     return true;
   }
 
-  size_t pop_batch(T* output, size_t max_count) {
-    const size_t tail = tail_.load(std::memory_order_relaxed);
-
-    if (tail == head_cache_) {
-      head_cache_ = head_.load(std::memory_order_acquire);
-      if (tail == head_cache_) return 0;
+  bool push_block(const T& item) {
+    while (true) {
+      lock_.lock();
+      size_t next_tail = (tail_ + 1) % size_;
+      if (next_tail != head_) {
+        buffer_[tail_] = item;
+        tail_ = next_tail;
+        lock_.unlock();
+        return true;
+      }
+      lock_.unlock();
+      std::this_thread::yield();
     }
-
-    size_t head = head_cache_;
-
-    size_t available = head - tail;
-    if (available > max_count) available = max_count;
-
-    for (size_t i = 0; i < available; ++i) {
-      output[i] = buffer_[(tail + i) & mask_];
-    }
-
-    tail_.store(tail + available, std::memory_order_release);
-    return available;
   }
 
-  bool push_batch(const T* batch, size_t count) {
+  bool push_batch(const T* items, size_t count) {
     if (count == 0) return true;
-    if (count > capacity_) return false;
-
-    const size_t head = head_.load(std::memory_order_relaxed);
-
-    if (head - tail_cache_ + count > capacity_) {
-      tail_cache_ = tail_.load(std::memory_order_acquire);
-      if (head - tail_cache_ + count > capacity_) {
-        return false;
-      }
+    lock_.lock();
+    size_t available = (size_ + head_ - tail_ - 1) % size_;
+    if (count > available) {
+      lock_.unlock();
+      return false;
     }
 
-    for (size_t i = 0; i < count; ++i) {
-      buffer_[(head + i) & mask_] = batch[i];
+    size_t first_chunk = std::min(count, size_ - tail_);
+    std::memcpy(&buffer_[tail_], items, first_chunk * sizeof(T));
+    if (first_chunk < count) {
+      std::memcpy(&buffer_[0], items + first_chunk,
+                  (count - first_chunk) * sizeof(T));
     }
+    tail_ = (tail_ + count) % size_;
 
-    head_.store(head + count, std::memory_order_release);
-
+    lock_.unlock();
     return true;
   }
 
-  void push_block(const T& item) {
-    while (!push(item)) {
-#if defined(__x86_64__) || defined(_M_X64)
-      _mm_pause();
-#elif defined(__aarch64__)
-      asm volatile("yield");
-#endif
+  size_t pop_batch(T* dest, size_t max_count) {
+    lock_.lock();
+    if (head_ == tail_) {
+      lock_.unlock();
+      return 0;
     }
-  }
 
-  void push_block_measure(const T& item,
-                          std::chrono::nanoseconds& wait_duration) {
-    if (push(item)) return;
+    size_t available = (size_ + tail_ - head_) % size_;
+    size_t count = std::min(max_count, available);
 
-    auto start = std::chrono::steady_clock::now();
-    while (!push(item)) {
-#if defined(__x86_64__) || defined(_M_X64)
-      _mm_pause();
-#elif defined(__aarch64__)
-      asm volatile("yield");
-#endif
+    size_t first_chunk = std::min(count, size_ - head_);
+    std::memcpy(dest, &buffer_[head_], first_chunk * sizeof(T));
+    if (first_chunk < count) {
+      std::memcpy(dest + first_chunk, &buffer_[0],
+                  (count - first_chunk) * sizeof(T));
     }
-    auto end = std::chrono::steady_clock::now();
-    wait_duration += (end - start);
+    head_ = (head_ + count) % size_;
+
+    lock_.unlock();
+    return count;
   }
 
  private:
-  size_t capacity_;
-  size_t mask_;
-  T* buffer_;
+  size_t size_;
+  std::unique_ptr<T[]> buffer_;
+  size_t head_;
+  size_t tail_;
 
-  alignas(hardware_destructive_interference_size) std::atomic<size_t> head_{0};
-  alignas(hardware_destructive_interference_size) size_t tail_cache_{0};
-
-  alignas(hardware_destructive_interference_size) std::atomic<size_t> tail_{0};
-  alignas(hardware_destructive_interference_size) size_t head_cache_{0};
-
-  std::atomic_flag lock_ = ATOMIC_FLAG_INIT;
+  alignas(64) SpinLock lock_;
 };

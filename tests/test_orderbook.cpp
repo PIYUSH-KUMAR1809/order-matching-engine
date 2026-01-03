@@ -46,27 +46,25 @@ class ExchangeLogicTest : public ::testing::Test {
 };
 
 namespace {
+namespace {
 int countActiveOrdersAt(OrderBook* book, Price price, OrderSide side) {
-  int32_t curr = book->getOrderHead(price, side);
+  const auto& level = book->getLevel(price, side);
   int count = 0;
-  while (curr != -1) {
-    if (book->getNode(curr).active) {
-      count++;
-    }
-    curr = book->getNode(curr).next;
+  for (const auto& order : level.orders) {
+    if (order.active) count++;
   }
   return count;
 }
 
-OrderNode* getFirstActive(OrderBook* book, Price price, OrderSide side) {
-  int32_t curr = book->getOrderHead(price, side);
-  while (curr != -1) {
-    OrderNode& node = book->getNode(curr);
-    if (node.active) return &node;
-    curr = node.next;
+const Order* getFirstActive(const OrderBook* book, Price price,
+                            OrderSide side) {
+  const auto& level = book->getLevel(price, side);
+  for (const auto& order : level.orders) {
+    if (order.active) return &order;
   }
   return nullptr;
 }
+}  // namespace
 }  // namespace
 
 TEST_F(ExchangeLogicTest, AddOrder) {
@@ -81,9 +79,9 @@ TEST_F(ExchangeLogicTest, AddOrder) {
 
   ASSERT_EQ(countActiveOrdersAt(book, 10000, OrderSide::Sell), 1);
 
-  auto* node = getFirstActive(book, 10000, OrderSide::Sell);
+  const Order* node = getFirstActive(book, 10000, OrderSide::Sell);
   ASSERT_NE(node, nullptr);
-  ASSERT_EQ(node->order.quantity, 10);
+  ASSERT_EQ(node->quantity, 10);
 }
 
 TEST_F(ExchangeLogicTest, MatchFull) {
@@ -123,10 +121,10 @@ TEST_F(ExchangeLogicTest, MatchPartial) {
   ASSERT_NE(book, nullptr);
 
   ASSERT_EQ(countActiveOrdersAt(book, 10000, OrderSide::Sell), 1);
-  auto* node = getFirstActive(book, 10000, OrderSide::Sell);
+  const Order* node = getFirstActive(book, 10000, OrderSide::Sell);
   ASSERT_NE(node, nullptr);
-  ASSERT_EQ(node->order.quantity, 10);
-  ASSERT_EQ(node->order.id, 1);
+  ASSERT_EQ(node->quantity, 10);
+  ASSERT_EQ(node->id, 1);
 }
 
 TEST_F(ExchangeLogicTest, NoMatch) {

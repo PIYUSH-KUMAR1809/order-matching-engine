@@ -1,6 +1,5 @@
 #pragma once
 
-#include <array>
 #include <functional>
 #include <memory>
 #include <string>
@@ -25,7 +24,7 @@ class Exchange {
   Exchange &operator=(Exchange &&) = delete;
 
   struct Command {
-    enum Type : uint8_t { Add, Cancel, Stop } type = Add;
+    enum Type : uint8_t { Add, Cancel, Stop, Reset } type;
     union {
       struct {
         Order order;
@@ -35,8 +34,7 @@ class Exchange {
         int32_t symbolId;
       } cancel;
     };
-
-    Command() : type(Add) { add.order = {}; }
+    Command() : type(Add) { std::memset(&add, 0, sizeof(add)); }
   };
 
   void submitOrder(const Order &order, int shardHint = -1,
@@ -45,6 +43,7 @@ class Exchange {
   void cancelOrder(int32_t symbolId, OrderId orderId);
   void stop();
   void flush();
+  void reset();
 
   int32_t registerSymbol(const std::string &symbol, int shardId);
   std::string getSymbolName(int32_t symbolId) const;

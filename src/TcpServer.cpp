@@ -165,19 +165,22 @@ std::string TcpServer::processRequest(int clientSocket,
 
     Price p = book->getBestBid();
     int levels = 0;
+
+    const auto &bidMask = book->getBidMask();
+
     while (p > 0 && levels < 20) {
-      int32_t curr = book->getOrderHead(p, OrderSide::Buy);
-      if (curr != -1) {
-        bool hasActive = false;
-        while (curr != -1) {
-          auto &node = book->getNode(curr);
-          if (node.active) {
-            response << " " << node.order.price << " " << node.order.quantity;
-            hasActive = true;
+      if (bidMask.test(p)) {
+        const auto &level = book->getLevel(p, OrderSide::Buy);
+        if (level.activeCount > 0) {
+          bool hasActive = false;
+          for (const auto &order : level.orders) {
+            if (order.active && order.quantity > 0) {
+              response << " " << order.price << " " << order.quantity;
+              hasActive = true;
+            }
           }
-          curr = node.next;
+          if (hasActive) levels++;
         }
-        if (hasActive) levels++;
       }
       p--;
     }
@@ -185,21 +188,25 @@ std::string TcpServer::processRequest(int clientSocket,
     response << " ASKS";
     p = book->getBestAsk();
     levels = 0;
-    while (p < OrderBook::MAX_PRICE && levels < 20) {
-      int32_t curr = book->getOrderHead(p, OrderSide::Sell);
-      if (curr != -1) {
-        bool hasActive = false;
-        while (curr != -1) {
-          auto &node = book->getNode(curr);
-          if (node.active) {
-            response << " " << node.order.price << " " << node.order.quantity;
-            hasActive = true;
+
+    const auto &askMask = book->getAskMask();
+    if (p != -1) {
+      while (p < OrderBook::MAX_PRICE && levels < 20) {
+        if (askMask.test(p)) {
+          const auto &level = book->getLevel(p, OrderSide::Sell);
+          if (level.activeCount > 0) {
+            bool hasActive = false;
+            for (const auto &order : level.orders) {
+              if (order.active && order.quantity > 0) {
+                response << " " << order.price << " " << order.quantity;
+                hasActive = true;
+              }
+            }
+            if (hasActive) levels++;
           }
-          curr = node.next;
         }
-        if (hasActive) levels++;
+        p++;
       }
-      p++;
     }
 
     response << "\n";

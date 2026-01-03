@@ -192,6 +192,15 @@ void Exchange::cancelOrder(int32_t symbolId, OrderId orderId) {
   }
 }
 
+void Exchange::reset() {
+  for (auto &shard : shards_) {
+    Command cmd;
+    cmd.type = Command::Reset;
+    shard->queue.push_block(cmd);
+  }
+  std::this_thread::sleep_for(std::chrono::milliseconds(20));
+}
+
 void Exchange::setTradeCallback(TradeCallback cb) { onTrade_ = std::move(cb); }
 
 #ifdef __linux__
@@ -233,7 +242,7 @@ void Exchange::workerLoop(int shardId) {
     }
 
     for (size_t i = 0; i < count; ++i) {
-      const Command &cmd = cmdBuffer[i];
+      auto &cmd = cmdBuffer[i];
 
       if (cmd.type == Command::Stop) {
         if (!shard.tradeBuffer.empty() && onTrade_) {
@@ -242,19 +251,24 @@ void Exchange::workerLoop(int shardId) {
         return;
       }
 
-      int32_t symId = (cmd.type == Command::Add) ? cmd.add.order.symbolId
-                                                 : cmd.cancel.symbolId;
-
-      if (symId >= shard.books.size() || !shard.books[symId]) {
-        continue;
-      }
-
-      OrderBook *book = shard.books[symId].get();
-
-      if (cmd.type == Command::Add) {
+      if (cmd.type == Command::Type::Add) {
+        int32_t symId = cmd.add.order.symbolId;
+        if (symId >= shard.books.size() || !shard.books[symId]) {
+          continue;
+        }
+        OrderBook *book = shard.books[symId].get();
         shard.matchingStrategy.match(*book, cmd.add.order, shard.tradeBuffer);
-      } else if (cmd.type == Command::Cancel) {
-        book->cancelOrder(cmd.cancel.orderId);
+      } else if (cmd.type == Command::Type::Cancel) {
+        int32_t symId = cmd.cancel.symbolId;
+        if (symId >= shard.books.size() || !shard.books[symId]) {
+          continue;
+        }
+        OrderBook *book = shard.books[symId].get();
+        book->cancelOrder(cmd.cancel.orderId, symId);
+      } else if (cmd.type == Command::Type::Reset) {
+        for (auto &b : shard.books) {
+          if (b) b->reset();
+        }
       }
     }
 
