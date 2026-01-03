@@ -84,6 +84,16 @@ void Exchange::flush() {
   }
 }
 
+void Exchange::drain() {
+  flush();
+
+  for (auto &shard : shards_) {
+    while (shard->queue.size() > 0) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+  }
+}
+
 void Exchange::submitOrder(const Order &order, int shardHint,
                            std::chrono::nanoseconds *wait_duration) {
   int32_t symbolId = order.symbolId;
