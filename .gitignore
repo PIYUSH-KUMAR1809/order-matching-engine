@@ -23,5 +23,5 @@ __pycache__/
 
 # Private Documentation
 OPERATIONAL_GUIDE.md
-scripts/
 PROJECT_DEEP_DIVE.md
+data/
