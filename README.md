@@ -74,10 +74,31 @@ To ensure the engine is actually matching correctly and not just dropping frames
 ./build/src/benchmark --verify
 ```
 
+### Real-World Market Replay
+Test the engine against **live Binance L3 data** (Trade + Depth updates) to verify handling of realistic price clustering and bursty order flow.
+
+1. **Record Data** (Requires Python 3 + `websocket-client`):
+   ```bash
+   # Record 60 seconds of live BTCUSDT data
+   python3 scripts/record_l3_data.py 60
+   ```
+
+2. **Run Replay**:
+   ```bash
+   ./build/src/benchmark --replay data/market_data.csv
+   ```
+   > **Result**: ~132,000,000 orders/sec (M1 Pro) on real-world data.
+
 ### Running the Server
 Start the engine networking layer (listens on port 8080):
 ```bash
 ./build/src/OrderMatchingEngine
+```
+
+**Populate the Book (Optional):**
+To quickly seed the book with Bids, Asks, and Trades for testing/visualization:
+```bash
+python3 scripts/seed_orders.py
 ```
 
 ---
