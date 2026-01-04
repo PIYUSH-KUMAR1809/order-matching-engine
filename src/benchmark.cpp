@@ -1,10 +1,12 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <fstream>
 #include <iostream>
 #include <memory>
 #include <numeric>
 #include <random>
+#include <sstream>
 #include <thread>
 #include <vector>
 
@@ -109,6 +111,95 @@ void runVerification() {
 }
 }  // namespace
 
+std::vector<std::string> splitString(const std::string &s, char delimiter) {
+  std::vector<std::string> tokens;
+  std::string token;
+  std::istringstream tokenStream(s);
+  while (std::getline(tokenStream, token, delimiter)) {
+    tokens.push_back(token);
+  }
+  return tokens;
+}
+
+std::vector<Order> readCsv(const std::string &filename, int32_t symbolId) {
+  std::vector<Order> orders;
+  std::ifstream file(filename);
+  if (!file.is_open()) {
+    std::cerr << "Failed to open file: " << filename << "\n";
+    return orders;
+  }
+
+  std::string line;
+  // Skip header
+  std::getline(file, line);
+
+  OrderId nextId = 1;
+  while (std::getline(file, line)) {
+    if (line.empty()) continue;
+    auto tokens = splitString(line, ',');
+    if (tokens.size() < 5) continue;
+
+    std::string typeStr = tokens[1];
+    std::string sideStr = tokens[2];
+    double priceFloat = std::stod(tokens[3]);
+    double qtyFloat = std::stod(tokens[4]);
+
+    Price price = static_cast<Price>(priceFloat * 100.0);
+    Quantity qty = static_cast<Quantity>(qtyFloat * 10000.0);
+    if (qty == 0) qty = 1;
+
+    OrderSide side = (sideStr == "B") ? OrderSide::Buy : OrderSide::Sell;
+    OrderType type = OrderType::Limit;
+
+    if (typeStr == "C") continue;
+
+    orders.emplace_back(nextId++, 0, symbolId, side, type, price, qty);
+  }
+
+  std::cout << "Loaded " << orders.size() << " orders from " << filename
+            << "\n";
+  return orders;
+}
+
+void runReplay(const std::string &filename) {
+  std::cout << "=== Running Replay Mode ===\n";
+  std::cout << "Loading market data from " << filename << "...\n";
+
+  int numThreads = 1;
+  Exchange engine(numThreads);
+  int32_t symbolId = engine.registerSymbol("REPLAY", 0);
+
+  auto orders = readCsv(filename, symbolId);
+  if (orders.empty()) {
+    std::cerr << "No orders loaded. Exiting.\n";
+    return;
+  }
+
+  std::cout << "Starting replay of " << orders.size() << " orders...\n";
+
+  int iterations = 10000000 / std::max(1, (int)orders.size());
+  if (iterations < 1) iterations = 1;
+
+  std::cout << "Replaying dataset " << iterations << " times ("
+            << (orders.size() * iterations) << " total ops)...\n";
+
+  auto start = std::chrono::steady_clock::now();
+
+  benchmarkWorker(engine, orders, 0, iterations);
+
+  auto end = std::chrono::steady_clock::now();
+  std::chrono::duration<double> diff = end - start;
+
+  long long totalOps = (long long)orders.size() * iterations;
+  long long tput =
+      static_cast<long long>(static_cast<double>(totalOps) / diff.count());
+
+  std::cout << "Replay Complete:\n";
+  std::cout << "  Time: " << diff.count() << "s\n";
+  std::cout << "  Total Ops: " << totalOps << "\n";
+  std::cout << "  Throughput: " << tput << " orders/sec\n";
+}
+
 int main(int argc, char *argv[]) {
   bool verifyMode = false;
   for (int i = 1; i < argc; ++i) {
@@ -118,6 +209,16 @@ int main(int argc, char *argv[]) {
     }
     if (arg == "--verify" || arg == "-v") {
       verifyMode = true;
+    }
+    if (arg == "--replay") {
+      if (i + 1 < argc) {
+        std::string filename = argv[i + 1];
+        runReplay(filename);
+        return 0;
+      } else {
+        std::cerr << "Error: --replay requires a filename\n";
+        return 1;
+      }
     }
   }
 
