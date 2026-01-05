@@ -118,5 +118,8 @@ void OrderBook::reset() {
 }
 
 void OrderBook::printBook() const {
-  std::cout << "OrderBook Active Orders: " << "TODO" << "\n";
+  size_t count = 0;
+  for (const auto& level : bids) count += level.activeCount;
+  for (const auto& level : asks) count += level.activeCount;
+  std::cout << "OrderBook Active Orders: " << count << "\n";
 }
