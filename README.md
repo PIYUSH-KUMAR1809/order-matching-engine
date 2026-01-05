@@ -30,23 +30,42 @@ A production-grade, high-frequency trading (HFT) Limit Order Book (LOB) and Matc
 The system moves away from the traditional "Central Limit Order Book with Global Lock" to a **Partitioned/Sharded Model**.
 
 ```mermaid
-graph TD
-    User([User/Network]) -->|Orders| Gateway{Hashing Routing}
-    
-    subgraph "Core 0 (Pinned)"
-        Gateway -->|Symbol A| RB0[Ring Buffer 0]
-        RB0 --> Matcher0[Matching Engine Shard 0]
-        Matcher0 -->|PMR| Mem0[Stack Memory Arena]
-    end
-    
-    subgraph "Core 1 (Pinned)"
-        Gateway -->|Symbol B| RB1[Ring Buffer 1]
-        RB1 --> Matcher1[Matching Engine Shard 1]
-        Matcher1 -->|PMR| Mem1[Stack Memory Arena]
+graph LR
+    %% Styles for high visibility and contrast
+    classDef client fill:#e3f2fd,stroke:#1565c0,stroke-width:2px,color:#0d47a1
+    classDef infra fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px,color:#4a148c
+    classDef core fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px,color:#1b5e20
+    classDef memory fill:#fff3e0,stroke:#e65100,stroke-width:2px,color:#e65100
+
+    User([User / Network]) -->|TCP Input| Gateway{Symbol Mapping}
+    class User client
+    class Gateway infra
+
+    %% Shard 0 Pipeline
+    subgraph Core0 [Core 0: Pinned]
+        direction TB
+        RB0[Ring Buffer<br/>SPSC Lock-Free]:::infra
+        Matcher0[Matching Engine<br/>Shard 0]:::core
+        Mem0[PMR Arena<br/>Stack Buffer]:::memory
+        
+        RB0 --> Matcher0
+        Matcher0 --> Mem0
     end
 
-    style RB0 fill:#f9f,stroke:#333,stroke-width:2px
-    style RB1 fill:#f9f,stroke:#333,stroke-width:2px
+    %% Shard 1 Pipeline
+    subgraph Core1 [Core 1: Pinned]
+        direction TB
+        RB1[Ring Buffer<br/>SPSC Lock-Free]:::infra
+        Matcher1[Matching Engine<br/>Shard 1]:::core
+        Mem1[PMR Arena<br/>Stack Buffer]:::memory
+        
+        RB1 --> Matcher1
+        Matcher1 --> Mem1
+    end
+
+    %% Routing (No crossing)
+    Gateway -->|Shard 0: GOOG, MSFT| RB0
+    Gateway -->|Shard 1: AAPL, TSLA| RB1
 ```
 
 1.  **Ingestion (Exchange)**:
