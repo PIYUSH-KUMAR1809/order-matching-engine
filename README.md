@@ -29,6 +29,26 @@ A production-grade, high-frequency trading (HFT) Limit Order Book (LOB) and Matc
 
 The system moves away from the traditional "Central Limit Order Book with Global Lock" to a **Partitioned/Sharded Model**.
 
+```mermaid
+graph TD
+    User([User/Network]) -->|Orders| Gateway{Hashing Routing}
+    
+    subgraph "Core 0 (Pinned)"
+        Gateway -->|Symbol A| RB0[Ring Buffer 0]
+        RB0 --> Matcher0[Matching Engine Shard 0]
+        Matcher0 -->|PMR| Mem0[Stack Memory Arena]
+    end
+    
+    subgraph "Core 1 (Pinned)"
+        Gateway -->|Symbol B| RB1[Ring Buffer 1]
+        RB1 --> Matcher1[Matching Engine Shard 1]
+        Matcher1 -->|PMR| Mem1[Stack Memory Arena]
+    end
+
+    style RB0 fill:#f9f,stroke:#333,stroke-width:2px
+    style RB1 fill:#f9f,stroke:#333,stroke-width:2px
+```
+
 1.  **Ingestion (Exchange)**:
     *   Orders are received and hashed by `SymbolID`.
     *   "Smart Gateway" logic routes the order to the specific Shard owning that symbol.
