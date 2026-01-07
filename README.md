@@ -4,6 +4,11 @@ A production-grade, high-frequency trading (HFT) Limit Order Book (LOB) and Matc
 
 > **Performance Benchmark**: **~156,000,000 orders/second** (Average) | **~169,000,000** (Peak) on Apple M1 Pro.
 
+### ⚡️ Key Takeaways
+*   **Architecture**: Sharded "Share-by-Communicating" design avoids global locks.
+*   **Memory**: `std::pmr` monotonic buffers on the stack = 0 heap allocations on hot path.
+*   **Optimization**: `alignas(128)` (vs 64) reduced M1/M2 false sharing by ~5%.
+
 ---
 
 ## 🚀 Key Features
