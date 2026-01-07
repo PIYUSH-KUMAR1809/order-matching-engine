@@ -2,7 +2,7 @@
 
 A production-grade, high-frequency trading (HFT) Limit Order Book (LOB) and Matching Engine written in C++20. Designed for extreme throughput, deterministic latency, and cache efficiency using modern lock-free techniques.
 
-![C++](https://img.shields.io/badge/C++-20-blue.svg?style=flat&logo=c%2B%2B) ![License](https://img.shields.io/badge/License-MIT-green.svg) ![Build Status](https://img.shields.io/badge/build-passing-brightgreen) [![Awesome Quant](https://awesome.re/badge.svg)](https://github.com/wilsonfreitas/awesome-quant)
+![C++](https://img.shields.io/badge/C++-20-blue.svg?style=flat&logo=c%2B%2B) ![License](https://img.shields.io/badge/License-MIT-green.svg) [![CMake Build](https://github.com/PIYUSH-KUMAR1809/order-matching-engine/actions/workflows/cmake.yml/badge.svg)](https://github.com/PIYUSH-KUMAR1809/order-matching-engine/actions/workflows/cmake.yml) [![Awesome Quant](https://awesome.re/badge.svg)](https://github.com/wilsonfreitas/awesome-quant)
 
 > **Performance Benchmark**: **~156,000,000 orders/second** (Average) | **~169,000,000** (Peak) on Apple M1 Pro.
 
