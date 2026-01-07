@@ -58,7 +58,7 @@ class Exchange {
   static void pinThread(int coreId);
 
  private:
-  struct Shard {
+  struct alignas(128) Shard {
     RingBuffer<Command> queue{65536};
 
     std::vector<std::unique_ptr<OrderBook>> books;

@@ -136,5 +136,5 @@ class RingBuffer {
   size_t head_;
   size_t tail_;
 
-  alignas(64) SpinLock lock_;
+  alignas(128) SpinLock lock_;
 };

@@ -18,7 +18,7 @@ A production-grade, high-frequency trading (HFT) Limit Order Book (LOB) and Matc
     *   **PMR (Polymorphic Memory Resources)**: Uses `std::pmr::monotonic_buffer_resource` with a pre-allocated 512MB stack buffer for nanosecond-level allocations.
     *   **Soft Limits**: Gracefully falls back to heap allocation if the static buffer is exhausted (no crashes).
 *   **Lock-Free Architecture**:
-    *   **SPSC Ring Buffer**: Custom cache-line aligned (`alignas(64)`) ring buffer for thread-safe, lock-free communication between producer and consumer.
+    *   **SPSC Ring Buffer**: Custom cache-line aligned (`alignas(128)`) ring buffer for thread-safe, lock-free communication between producer and consumer.
     *   **Shard-per-Core**: "Share by Communicating" design. Each CPU core owns a dedicated shard, eliminating mutex contention entirely.
 *   **Cache Optimizations**:
     *   **Flat OrderBook**: Replaces node-based maps with `std::vector` for linear memory access.
@@ -134,6 +134,7 @@ Test the engine against **live Binance L3 data** (Trade + Depth updates) to veri
    > **Result**: ~132,000,000 orders/sec (M1 Pro) on real-world data.
 
 ### Running the Server
+![C++](https://img.shields.io/badge/C++-20-blue.svg?style=flat&logo=c%2B%2B) ![License](https://img.shields.io/badge/License-MIT-green.svg) ![Build Status](https://img.shields.io/badge/build-passing-brightgreen) [![Awesome Quant](https://awesome.re/badge.svg)](https://github.com/wilsonfreitas/awesome-quant)
 Start the engine networking layer (listens on port 8080):
 ```bash
 ./build/src/OrderMatchingEngine
