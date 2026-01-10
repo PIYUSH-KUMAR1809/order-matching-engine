@@ -49,7 +49,7 @@ class OrderBook {
   OrderBook();
 
   void addOrder(const Order& order);
-  void cancelOrder(OrderId orderId, int32_t symbolId);
+  void cancelOrder(OrderId orderId);
 
   std::vector<PriceLevel>& getBids() { return bids; }
   std::vector<PriceLevel>& getAsks() { return asks; }

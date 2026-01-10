@@ -2,11 +2,10 @@
 
 #include <cstdint>
 #include <cstring>
-#include <string>
 
-enum class OrderSide { Buy, Sell };
+enum class OrderSide : uint8_t { Buy, Sell };
 
-enum class OrderType { Limit, Market };
+enum class OrderType : uint8_t { Limit, Market };
 
 using OrderId = uint64_t;
 using Price = int64_t;

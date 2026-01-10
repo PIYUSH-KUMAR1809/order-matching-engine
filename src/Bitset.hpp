@@ -23,7 +23,7 @@ class PriceBitset {
     return (data_[index / 64] & (1ULL << (index % 64))) != 0;
   }
 
-  size_t findFirstSet(size_t start) const {
+  [[nodiscard]] size_t findFirstSet(size_t start) const {
     if (start >= size_) return size_;
     size_t idx = start / 64;
     size_t bit = start % 64;
@@ -33,7 +33,7 @@ class PriceBitset {
       if (data_[idx] != 0) return idx * 64 + __builtin_ctzll(data_[idx]);
     return size_;
   }
-  size_t findFirstSetDown(size_t start) const {
+  [[nodiscard]] size_t findFirstSetDown(size_t start) const {
     if (start >= size_) start = size_ - 1;
     size_t idx = start / 64;
     size_t bit = start % 64;

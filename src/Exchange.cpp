@@ -97,7 +97,7 @@ void Exchange::drain() {
 void Exchange::submitOrder(const Order &order, int shardHint,
                            std::chrono::nanoseconds *wait_duration) {
   int32_t symbolId = order.symbolId;
-  size_t shardId;
+  size_t shardId = 0;
 
   if (shardHint >= 0 && shardHint < static_cast<int>(shards_.size())) {
     shardId = shardHint;
@@ -147,7 +147,7 @@ void Exchange::submitOrders(const std::vector<Order> &orders, int shardHint) {
 
   for (const auto &order : orders) {
     int32_t symbolId = order.symbolId;
-    size_t shardId;
+    size_t shardId = 0;
 
     if (shardHint >= 0 && shardHint < static_cast<int>(shards_.size())) {
       shardId = shardHint;
@@ -174,7 +174,7 @@ void Exchange::submitOrders(const std::vector<Order> &orders, int shardHint) {
 }
 
 void Exchange::cancelOrder(int32_t symbolId, OrderId orderId) {
-  size_t shardId;
+  size_t shardId = 0;
   if (symbolId >= 0 &&
       symbolId < static_cast<int32_t>(symbolIdToShardId_.size())) {
     shardId = symbolIdToShardId_[symbolId];
@@ -274,7 +274,7 @@ void Exchange::workerLoop(int shardId) {
           continue;
         }
         OrderBook *book = shard.books[symId].get();
-        book->cancelOrder(cmd.cancel.orderId, symId);
+        book->cancelOrder(cmd.cancel.orderId);
       } else if (cmd.type == Command::Type::Reset) {
         for (auto &b : shard.books) {
           if (b) b->reset();

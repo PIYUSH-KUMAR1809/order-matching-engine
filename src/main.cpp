@@ -8,9 +8,9 @@ int main() {
   Exchange engine;
   TcpServer server(engine, 8080);
 
-  std::cout << "Starting Order Matching Engine Server..." << std::endl;
+  std::cout << "Starting Order Matching Engine Server..." << "\n";
   if (!server.start()) {
-    std::cerr << "Failed to start server" << std::endl;
+    std::cerr << "Failed to start server" << "\n";
     return 1;
   }
 

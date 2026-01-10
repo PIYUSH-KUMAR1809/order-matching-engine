@@ -1,13 +1,14 @@
 #include "OrderBook.hpp"
 
 #include <algorithm>
+#include <cstddef>
 #include <iostream>
 #include <vector>
 
 #include "Order.hpp"
 
 OrderBook::OrderBook()
-    : buffer(512 * 1024 * 1024),
+    : buffer(static_cast<size_t>(512 * 1024 * 1024)),
       pool(buffer.data(), buffer.size(), std::pmr::new_delete_resource()),
       bidMask(MAX_PRICE),
       askMask(MAX_PRICE) {
@@ -47,7 +48,7 @@ void OrderBook::addOrder(const Order& order) {
   }
 }
 
-void OrderBook::cancelOrder(OrderId orderId, int32_t symbolId) {
+void OrderBook::cancelOrder(OrderId orderId) {
   if (orderId >= idToLocation.size()) return;
 
   OrderLocation loc = idToLocation[orderId];
