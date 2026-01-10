@@ -34,7 +34,7 @@ void OrderBook::addOrder(const Order& order) {
   auto& levels = isBid ? bids : asks;
   auto& level = levels[order.price];
 
-  idToLocation[order.id] = {order.price, (int32_t)level.orders.size()};
+  idToLocation[order.id] = {.price=order.price, .index=(int32_t)level.orders.size()};
 
   level.orders.push_back(order);
   level.activeCount++;
