@@ -4,28 +4,33 @@ A production-grade, high-frequency trading (HFT) Limit Order Book (LOB) and Matc
 
 ![C++](https://img.shields.io/badge/C++-20-blue.svg?style=flat&logo=c%2B%2B) ![License](https://img.shields.io/badge/License-MIT-green.svg) [![CMake Build](https://github.com/PIYUSH-KUMAR1809/order-matching-engine/actions/workflows/cmake.yml/badge.svg)](https://github.com/PIYUSH-KUMAR1809/order-matching-engine/actions/workflows/cmake.yml) [![Awesome Quant](https://awesome.re/badge.svg)](https://github.com/wilsonfreitas/awesome-quant)
 
-> **Performance Benchmark**: **~156,000,000 orders/second** (Average) | **~169,000,000** (Peak) on Apple M1 Pro.
+> **Performance Benchmark**: **~160,000,000 orders/second** (Average) | **~171,000,000** (Peak) on Apple M1 Pro.
 
 ### ⚡️ Key Takeaways
 *   **Architecture**: Sharded "Share-by-Communicating" design avoids global locks.
 *   **Memory**: `std::pmr` monotonic buffers on the stack = 0 heap allocations on hot path.
 *   **Optimization**: `alignas(128)` (vs 64) reduced M1/M2 false sharing by ~5%.
+*   **Latency**: Sub-microsecond matching latency within the engine core.
 
 ---
 
 ## 🚀 Key Features
 
-*   **Ultra-High Throughput**: Capable of processing **>150 million** distinct order operations per second.
+*   **Ultra-High Throughput**: Capable of processing **>160 million** distinct order operations per second on a single machine.
 *   **Zero-Allocation Hot Path**:
     *   **PMR (Polymorphic Memory Resources)**: Uses `std::pmr::monotonic_buffer_resource` with a pre-allocated 512MB stack buffer for nanosecond-level allocations.
     *   **Soft Limits**: Gracefully falls back to heap allocation if the static buffer is exhausted (no crashes).
 *   **Lock-Free Architecture**:
     *   **SPSC Ring Buffer**: Custom cache-line aligned (`alignas(128)`) ring buffer for thread-safe, lock-free communication between producer and consumer.
     *   **Shard-per-Core**: "Share by Communicating" design. Each CPU core owns a dedicated shard, eliminating mutex contention entirely.
+    *   **Thread Pinning**: Experimentally verified `pthread_setaffinity_np` / `thread_policy_set` guarantees exclusive core usage for worker threads.
 *   **Cache Optimizations**:
     *   **Flat OrderBook**: Replaces node-based maps with `std::vector` for linear memory access.
-    *   **Bitset Scanning**: Uses CPU intrinsics (`__builtin_ctzll`) to "teleport" to the next active price level, skipping empty levels instantly.
+    *   **Bitset Scanning**: Uses CPU intrinsics (`__builtin_ctzll`) to "teleport" to the next active price level, skipping empty levels instantly. Optimized to avoid "ghost level" checks.
     *   **Compact Storage**: Order objects are PODs (Plain Old Data) optimized for `memcpy`.
+*   **Smart Batching**:
+    *   **Producer-Side**: Thread-local accumulation of orders reduces atomic contention on the RingBuffer tail.
+    *   **Consumer-Side**: Workers pop commands in batches (up to 256) to amortize cache line invalidations.
 *   **Verification & Safety**:
     *   **Deterministic**: `--verify` mode runs a mathematically verifiable sequence (Matches == Min(Buys, Sells)).
     *   **Instrumentation**: `--latency` mode enables wall-clock end-to-end latency tracking.
@@ -80,7 +85,7 @@ graph LR
     *   "Smart Gateway" logic routes the order to the specific Shard owning that symbol.
 2.  **Transport (Ring Buffer)**:
     *   Orders are pushed into a lock-free Single-Producer Single-Consumer (SPSC) ring buffer.
-    *   This acts as the boundary between the "Network/Producer" thread and the "Matching/Consumer" thread.
+    *   **Union-Based Commands**: Uses a `union` structure to overlay `Add` and `Cancel` commands, saving memory and fitting more commands per cache line.
 3.  **Matching (Core)**:
     *   **Flat OrderBook**: Bids and Asks are simple `std::pmr::vector`s indexed directly by price (O(1) lookup).
     *   **Matcher**: Iterates linearly over the vector for maximum hardware prefetching efficiency. Active orders are tracked via a `Bitset`.
@@ -103,7 +108,7 @@ make -j$(nproc)
 ```
 
 ### Running Benchmarks
-To replicate the >150M ops/s performance:
+To replicate the >160M ops/s performance:
 ```bash
 ./build/src/benchmark
 ```
@@ -112,7 +117,7 @@ To measure **End-to-End Latency** (approximate P50/P99):
 ```bash
 ./build/src/benchmark --latency
 ```
-*Note: Latency mode adds instrumentation overhead and runs usually at ~30-40M ops/sec.*
+*Note: Latency mode adds instrumentation overhead and runs usually at ~15-20M ops/sec on M1 Pro due to timestamp calls.*
 
 ### Running Verification
 To ensure the engine is actually matching correctly and not just dropping frames:
@@ -180,5 +185,4 @@ The project includes a comprehensive GoogleTest suite covering matching logic, c
 
 ## 📈 Roadmap (Future)
 *   **Kernel Bypass**: Integration with DPDK/Solarflare for sub-microsecond wire latency.
-*   **Batching**: Processing orders in cache-line sized batches (e.g., 8 orders) to amortize ring buffer costs.
 *   **Market Data Distribution**: Multicast UDP feed for quote dissemination.

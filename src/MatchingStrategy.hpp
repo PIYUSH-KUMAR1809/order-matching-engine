@@ -71,7 +71,7 @@ class StandardMatchingStrategy : public MatchingStrategy {
               level.activeCount--;
               if (i == level.headIndex) level.headIndex++;
 
-              if (level.activeCount == 0 && book.getBestAsk() == p) {
+              if (level.activeCount == 0) {
                 book.askMask.clear(p);
                 level.orders.clear();
                 level.headIndex = 0;
