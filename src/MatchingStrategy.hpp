@@ -87,9 +87,8 @@ class StandardMatchingStrategy : public MatchingStrategy {
         if (p > book.bestAsk)
           book.bestAsk = (p < OrderBook::MAX_PRICE) ? p : -1;
       }
-      if (book.askMask.findFirstSet(book.bestAsk) >= OrderBook::MAX_PRICE) {
-        book.bestAsk = -1;
-      }
+      size_t nextAsk = book.askMask.findFirstSet(book.bestAsk);
+      book.bestAsk = (nextAsk >= OrderBook::MAX_PRICE) ? -1 : (Price)nextAsk;
 
     } else {
       if (book.bestBid == 0 && !book.bidMask.test(0)) {

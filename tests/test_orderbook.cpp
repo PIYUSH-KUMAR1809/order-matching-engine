@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "Exchange.hpp"
+#include "MatchingStrategy.hpp"
 #include "OrderBook.hpp"
 
 class ExchangeLogicTest : public ::testing::Test {
@@ -214,6 +215,64 @@ TEST(ExchangeTest, MultiAssetIsolation) {
   ASSERT_EQ(captured[0].makerOrderId, 1);
   ASSERT_EQ(captured[0].takerOrderId, 3);
   ASSERT_EQ(captured[0].symbolId, aapl);
+}
+
+TEST(MatchingStrategyTest, BestAskAdvancesWhenBuyClearsLevel) {
+  OrderBook book;
+  StandardMatchingStrategy strategy;
+
+  Order askBest(1, 0, 0, OrderSide::Sell, OrderType::Limit, 100, 10);
+  Order askNext(2, 0, 0, OrderSide::Sell, OrderType::Limit, 200, 10);
+  book.addOrder(askBest);
+  book.addOrder(askNext);
+  ASSERT_EQ(book.getBestAsk(), 100);
+
+  std::vector<Trade> trades;
+  Order buy(3, 0, 0, OrderSide::Buy, OrderType::Limit, 200, 10);
+  strategy.match(book, buy, trades);
+
+  ASSERT_EQ(trades.size(), 1);
+  ASSERT_EQ(trades[0].quantity, 10);
+  ASSERT_EQ(trades[0].price, 100);
+  EXPECT_EQ(book.getBestAsk(), 200);
+  EXPECT_EQ(book.getLevel(100, OrderSide::Sell).activeCount, 0);
+  EXPECT_EQ(book.getLevel(200, OrderSide::Sell).activeCount, 1);
+}
+
+TEST(MatchingStrategyTest, BestAskClearsWhenLastAskExhausted) {
+  OrderBook book;
+  StandardMatchingStrategy strategy;
+
+  Order ask(1, 0, 0, OrderSide::Sell, OrderType::Limit, 100, 10);
+  book.addOrder(ask);
+
+  std::vector<Trade> trades;
+  Order buy(2, 0, 0, OrderSide::Buy, OrderType::Limit, 100, 10);
+  strategy.match(book, buy, trades);
+
+  ASSERT_EQ(trades.size(), 1);
+  EXPECT_EQ(book.getBestAsk(), -1);
+}
+
+TEST(MatchingStrategyTest, BestBidAdvancesWhenSellClearsLevel) {
+  OrderBook book;
+  StandardMatchingStrategy strategy;
+
+  Order bidBest(1, 0, 0, OrderSide::Buy, OrderType::Limit, 200, 10);
+  Order bidNext(2, 0, 0, OrderSide::Buy, OrderType::Limit, 100, 10);
+  book.addOrder(bidBest);
+  book.addOrder(bidNext);
+  ASSERT_EQ(book.getBestBid(), 200);
+
+  std::vector<Trade> trades;
+  Order sell(3, 0, 0, OrderSide::Sell, OrderType::Limit, 100, 10);
+  strategy.match(book, sell, trades);
+
+  ASSERT_EQ(trades.size(), 1);
+  ASSERT_EQ(trades[0].price, 200);
+  EXPECT_EQ(book.getBestBid(), 100);
+  EXPECT_EQ(book.getLevel(200, OrderSide::Buy).activeCount, 0);
+  EXPECT_EQ(book.getLevel(100, OrderSide::Buy).activeCount, 1);
 }
 
 TEST(ExchangeTest, SmartSharding) {
