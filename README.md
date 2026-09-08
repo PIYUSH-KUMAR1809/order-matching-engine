@@ -186,3 +186,11 @@ The project includes a comprehensive GoogleTest suite covering matching logic, c
 ## 📈 Roadmap (Future)
 *   **Kernel Bypass**: Integration with DPDK/Solarflare for sub-microsecond wire latency.
 *   **Market Data Distribution**: Multicast UDP feed for quote dissemination.
+
+---
+
+## Support
+
+This project is free and MIT-licensed. If it was useful — for a system, a benchmark, or just learning how matching engines work — you can buy me a coffee. Completely optional.
+
+[![Buy Me A Coffee](https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png)](https://www.buymeacoffee.com/kpiyush8826)
