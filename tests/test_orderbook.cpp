@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "Exchange.hpp"
+#include "LineFramer.hpp"
 #include "MatchingStrategy.hpp"
 #include "OrderBook.hpp"
 
@@ -293,4 +294,42 @@ TEST(ExchangeTest, SmartSharding) {
 
   ASSERT_NE(bookA, nullptr);
   ASSERT_NE(bookB, nullptr);
+}
+
+TEST(TcpFramingTest, CoalescedCommandsBothSurface) {
+  LineFramer framer;
+  std::string chunk = "BUY A 10 100\nSELL A 5 90\n";
+  std::vector<std::string> lines = framer.feed(chunk.data(), chunk.size());
+
+  ASSERT_EQ(lines.size(), 2);
+  EXPECT_EQ(lines[0], "BUY A 10 100");
+  EXPECT_EQ(lines[1], "SELL A 5 90");
+  EXPECT_TRUE(framer.pending().empty());
+}
+
+TEST(TcpFramingTest, SplitCommandReassembled) {
+  LineFramer framer;
+
+  std::string part1 = "BUY A 10 1";
+  EXPECT_TRUE(framer.feed(part1.data(), part1.size()).empty());
+  EXPECT_EQ(framer.pending(), "BUY A 10 1");
+
+  std::string part2 = "00\n";
+  std::vector<std::string> lines = framer.feed(part2.data(), part2.size());
+  ASSERT_EQ(lines.size(), 1);
+  EXPECT_EQ(lines[0], "BUY A 10 100");
+  EXPECT_TRUE(framer.pending().empty());
+}
+
+TEST(TcpFramingTest, StaggeredBytesReassembled) {
+  LineFramer framer;
+  std::string command = "CANCEL A 7\n";
+  std::vector<std::string> lines;
+  for (char c : command) {
+    std::vector<std::string> more = framer.feed(&c, 1);
+    lines.insert(lines.end(), more.begin(), more.end());
+  }
+
+  ASSERT_EQ(lines.size(), 1);
+  EXPECT_EQ(lines[0], "CANCEL A 7");
 }

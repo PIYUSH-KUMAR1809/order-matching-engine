@@ -11,6 +11,8 @@
 #include <mutex>
 #include <sstream>
 
+#include "LineFramer.hpp"
+
 TcpServer::TcpServer(Exchange &engine, int port)
     : engine_(engine), port_(port), serverSocket_(-1), running_(false) {
   engine_.setTradeCallback([this](const std::vector<Trade> &trades) {
@@ -83,17 +85,22 @@ void TcpServer::acceptLoop() {
 
 void TcpServer::handleClient(int clientSocket) {
   std::array<char, 1024> buffer{};
+  LineFramer framer;
   while (running_) {
-    buffer.fill(0);
-    ssize_t bytesRead = read(clientSocket, buffer.data(), buffer.size() - 1);
+    ssize_t bytesRead = read(clientSocket, buffer.data(), buffer.size());
 
     if (bytesRead <= 0) {
       break;
     }
 
-    std::string request(buffer.data());
-    std::string response = processRequest(clientSocket, request);
-    write(clientSocket, response.c_str(), response.length());
+    // A single read can carry a command fragment, one command, or several
+    // commands. Frame complete lines and answer each one; the framer holds
+    // any trailing partial command for the next read.
+    for (const std::string& request :
+         framer.feed(buffer.data(), static_cast<size_t>(bytesRead))) {
+      std::string response = processRequest(clientSocket, request);
+      write(clientSocket, response.c_str(), response.length());
+    }
   }
   close(clientSocket);
   removeClient(clientSocket);
